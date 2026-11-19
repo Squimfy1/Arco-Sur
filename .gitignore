@@ -1,0 +1,5 @@
+# Private key for send.py. Never commit.
+.testnet_key
+
+__pycache__/
+.pytest_cache/
