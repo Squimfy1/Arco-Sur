@@ -9,8 +9,9 @@ dHedge splits this two ways and both are needed:
   assetGuards    - what may be HELD
   contractGuards - what may be CALLED
 
-Here that becomes allowed_recipients (who may receive) and limits (how much,
-how often). Pure functions, no network, no signing. Fully testable offline.
+Here that becomes allowed_recipients (who may receive) and limits (how much
+per payment, how much in total). There is no time-based limit. Pure
+functions, no network, no signing. Fully testable offline.
 """
 
 from dataclasses import dataclass, field

@@ -1,4 +1,4 @@
-"""Arc RPC client. Read-only calls.
+"""Arc RPC client. The helpers only read; ask() can also broadcast.
 
 One lesson baked in: Arc's edge rejects Python's default User-Agent with
 HTTP 403. The UA below is required, not cosmetic.
@@ -53,7 +53,7 @@ def to_int(hex_str):
     return int(hex_str, 16)
 
 
-# --- the four calls the execution loop needs -------------------------------
+# --- the five calls the execution loop needs -------------------------------
 
 def block_number():
     return to_int(ask("eth_blockNumber"))

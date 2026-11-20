@@ -123,7 +123,7 @@ def send(mandate, to, amount_usdc):
     # 3. Sign and broadcast.
     signed = acct.sign_transaction(tx)
     tx_hash = arc.ask("eth_sendRawTransaction",
-                      ["0x" + signed.raw_transaction.hex().lstrip("0x")])
+                      ["0x" + signed.raw_transaction.hex().removeprefix("0x")])
 
     log({
         "ts": time.time(), "from": acct.address, "to": to,
