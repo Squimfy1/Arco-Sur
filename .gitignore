@@ -1,8 +1,5 @@
-# Private key for send.py. Never commit.
+# Private key for send.ts. Never commit.
 .testnet_key
 
-__pycache__/
-.pytest_cache/
-
-# Project Python environment. Rebuild it from requirements.txt.
-.venv/
+# Installed packages. Rebuild them with: npm install
+node_modules/

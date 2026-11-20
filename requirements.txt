@@ -1,2 +1,0 @@
-eth-account==0.14.0
-pytest==9.2.0

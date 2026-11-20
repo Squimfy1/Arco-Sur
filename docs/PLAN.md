@@ -1,9 +1,9 @@
 # Arc build plan — every feature a crypto app needs, with its test
 
-**Where we are.** 528 lines in `/opt/data/arco-sur/`: `arc.py` (7 RPC calls),
-`guard.py` (the mandate), `send.py` (the five-stage loop), `test_guard.py`
-(17 tests, 13 of them refusals). The chain is live: block 72,917,913, gas 25
-gwei, chain ID 5042002.
+**Where we are.** TypeScript, 656 lines: `src/arc.ts` (RPC client),
+`src/guard.ts` (the mandate), `src/send.ts` (the five-stage loop),
+`tests/guard.test.ts` (18 tests, 13 of them refusals). Ported from Python on
+2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
 **The rule for the whole plan.** No stage is finished until its test passes.
 The test comes first where it can. A stage you cannot test is a stage you do
@@ -22,7 +22,7 @@ The complete loop for moving native USDC on Arc.
 it on retry, and a double-send becomes impossible — the chain rejects the
 second transaction with the same nonce.
 
-**Build:** already written (`send.py`). Guard decides → nonce read → sign →
+**Build:** already written (`send.ts`). Guard decides → nonce read → sign →
 broadcast → poll receipt → reconcile nonce advanced.
 
 **Test:** a real send of 0.1 USDC to your own throwaway address, returning
@@ -38,6 +38,11 @@ script printed `UNKNOWN` and *do not resend* for nonce 3, and the same
 transaction was then found mined with `status=1` in block 73,202,353. That is
 the double-send a blind retry would have caused.
 
+**Re-verified after the TypeScript port (2026-11-20):** viem signs a test
+transaction byte-for-byte identically to eth-account. Live send at nonce 4,
+`status=1`. Timeout case at nonce 5: `UNKNOWN`, then found mined with
+`status=1`. Log lines from both languages have the same shape.
+
 ---
 
 ## Stage 2 · The allowlist proves itself  ·  NEXT
@@ -45,7 +50,7 @@ the double-send a blind retry would have caused.
 **Concept: a refusal is a feature, and it must be recorded.** Most wallets
 have no concept of a forbidden destination.
 
-**Build:** nothing new. Point `send.py` at an address not on the mandate.
+**Build:** nothing new. Point `send.ts` at an address not on the mandate.
 
 **Test:** the log gains a line with `verdict=REFUSE`, a stated reason, and
 **no transaction hash**. If a hash appears, the guard ran too late.
@@ -58,7 +63,7 @@ have no concept of a forbidden destination.
 stale.** This is the distributed-data topic, and it is Roxom's posting
 verbatim: *operational data vs ledgers vs provider statements*.
 
-**Build `reconcile.py`:** read `sends.jsonl`, and for every logged send fetch
+**Build `reconcile.ts`:** read `sends.jsonl`, and for every logged send fetch
 the receipt from chain. Compare: did it land, does the amount match, is the
 `to` address identical, are there nonce gaps, and does the sum of logged sends
 equal the balance delta.
@@ -89,7 +94,7 @@ Selectors already computed:
 | `transfer(address,uint256)` | `0xa9059cbb` |
 | `approve(address,uint256)` | `0x095ea7b3` |
 
-**Build:** `call_contract(to, data)` in `arc.py`, then `token_balance(token,
+**Build:** `callContract(to, data)` in `arc.ts`, then `token_balance(token,
 holder)` which ABI-encodes the address as 32 bytes.
 
 **Test:** read `decimals()` from a token and assert it against the value the
