@@ -14,7 +14,9 @@ src/        the code
   guard.ts    the mandate: who may be paid, and how much
   send.ts     the send loop; this is the file you run
   reconcile.ts  checks the evidence log against the chain
-tests/      offline tests: the guard, refusals, and reconciliation
+  contracts.ts  the Arc contracts a user needs: address + ABI
+  read.ts       reads any of them with eth_call (no gas, no signing)
+tests/      offline tests: guard, refusals, reconciliation, contract reads
 docs/       PLAN.md (the staged build plan) and notes/
 evidence/   sends.jsonl, one line per send, never rewritten
 scratch/    early experiments, not used by the code
@@ -28,7 +30,7 @@ step.
 ```
 npm install         # first time only
 
-npm test            # 30 tests, no network
+npm test            # 41 tests, no network
 npm run typecheck   # checks the types; writes nothing
 npm run send        # sends 0.1 USDC to your own wallet
 
@@ -46,11 +48,19 @@ It reports each line as MATCHED, DIVERGENT (naming both values), PENDING,
 MISSING, REVERTED or REFUSED, and lists any nonce the chain has used that the
 log never recorded.
 
+```
+npm run balances                     # native USDC + every registered token
+npm run balances -- --address 0x…    # for any address
+```
+
+Decimals are read from each token, never assumed. An address with no
+contract is refused, never shown as a zero balance.
+
 `send.ts` reads a throwaway testnet private key from `.testnet_key` in the
 repo root. That file is gitignored. Never put a key holding real funds there.
 
 ## Progress
 
-See [docs/PLAN.md](docs/PLAN.md). Stages 1–3 are done: send and verify,
-refusals recorded and never sent, and reconciliation of the log against the
-chain.
+See [docs/PLAN.md](docs/PLAN.md). Stages 1–4 are done: send and verify,
+refusals recorded and never sent, reconciliation of the log against the
+chain, and reading any contract.

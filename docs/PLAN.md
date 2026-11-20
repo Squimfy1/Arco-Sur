@@ -2,8 +2,9 @@
 
 **Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
 mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
-chain), and 30 offline tests across `tests/`. Stages 1, 2 and 3 are done:
-that is a complete execution system. Ported from Python on
+chain), `src/contracts.ts` + `src/read.ts` (read any contract), and 41
+offline tests across `tests/`. Stages 1–4 are done; 1–3 alone are a complete
+execution system. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
 **The rule for the whole plan.** No stage is finished until its test passes.
@@ -115,10 +116,14 @@ moves the balance is fees, and fees are Stage 8's concept. Incoming funds
 
 ---
 
-## Stage 4 · Read a token balance (ERC-20)  ·  NEXT
+## Stage 4 · Read any contract (tokens first)  ·  DONE
 
 **Concept: `eth_call` is a read with no transaction, no gas, no nonce.** You
 execute a contract function locally on a node and throw the result away.
+
+*Widened on 2026-11-20 from "read a token balance" to "read any contract a
+user needs on Arc": hand-encoding only works for simple argument types, so
+it is done once to learn, and viem's ABI encoder does the rest.*
 
 Selectors already computed:
 
@@ -136,9 +141,32 @@ holder)` which ABI-encodes the address as 32 bytes.
 explorer shows. **Never hardcode 18** — on Arc native USDC is 18 decimals and
 everywhere else it is 6, which is a factor of a trillion waiting to happen.
 
+**Result (2026-11-20):**
+- `arc.ts` gains `call()` (eth_call) and `code()` (eth_getCode).
+- `src/contracts.ts` is the registry: USDC, EURC, Permit2 and Multicall3,
+  each with address and ABI, each checked live to hold code.
+- `src/read.ts`: `encodeBalanceOf` by hand (tested equal to viem's encoder
+  byte for byte), `readContract` for any function of any registered
+  contract, and `tokenInfo` / `tokenBalance` which read `decimals()` and
+  refuse anything outside 0–36. `npm run balances` prints them all.
+- Refused, never turned into a number: an address with no code (which
+  answers `"0x"` to everything, i.e. a fake zero balance), a contract that
+  reverts, and an answer that does not decode against the ABI.
+
+Live: USDC and EURC `decimals()` = 6. Native USDC 39.9972761908 (18
+decimals) and token USDC 39.997276 (6 decimals) agree exactly once scaled:
+39997276 = 39997276. Multicall3 `getChainId()` = 5042002, and Permit2
+`allowance(me, USDC, me)` decodes all three return values. An empty address
+and a different contract at `0x3600…0001` are both refused with a reason.
+The selector table above was checked against keccak. 11 offline tests in
+`tests/read.test.ts`.
+
+**Deferred:** batching reads through Multicall3 `aggregate3` goes to Stage
+9, where the page needs it; the address and ABI are already registered.
+
 ---
 
-## Stage 5 · Send a token, and the approval trap
+## Stage 5 · Send a token, and the approval trap  ·  NEXT
 
 **Concept: an ERC-20 transfer is a contract call, not a value transfer.** The
 amount lives in the calldata, not in the `value` field. And `approve` grants

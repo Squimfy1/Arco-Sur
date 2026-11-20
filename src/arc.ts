@@ -111,3 +111,21 @@ export type ChainTx = {
 export async function transaction(txHash: string): Promise<ChainTx | null> {
   return (await ask("eth_getTransactionByHash", [txHash])) as ChainTx | null;
 }
+
+// --- contracts ----------------------------------------------------------------
+
+/**
+ * Run a contract function read-only and return its raw answer.
+ *
+ * eth_call executes on the node and throws the result away: no transaction,
+ * no gas, no nonce, no signature. Careful: an address with NO contract also
+ * answers "0x" without any error. read.ts checks code() first for that reason.
+ */
+export async function call(to: string, data: `0x${string}`): Promise<`0x${string}`> {
+  return (await ask("eth_call", [{ to, data }, "latest"])) as `0x${string}`;
+}
+
+/** The contract's deployed bytecode. "0x" means there is no contract there. */
+export async function code(address: string): Promise<`0x${string}`> {
+  return (await ask("eth_getCode", [address, "latest"])) as `0x${string}`;
+}

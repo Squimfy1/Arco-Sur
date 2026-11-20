@@ -9,7 +9,8 @@
     "test": "vitest run",
     "typecheck": "tsc",
     "send": "node src/send.ts",
-    "reconcile": "node src/reconcile.ts"
+    "reconcile": "node src/reconcile.ts",
+    "balances": "node src/read.ts"
   },
   "dependencies": {
     "viem": "2.58.2"
