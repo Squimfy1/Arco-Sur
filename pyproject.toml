@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# The code lives in src/, the tests in tests/.
+pythonpath = ["src"]
+testpaths = ["tests"]

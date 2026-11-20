@@ -1,0 +1,2 @@
+{"amount_usdc": "0.1", "broadcast": true, "from": "0xCbEB3dcd3A96843b0324a983658bD31393466486", "nonce": 0, "to": "0xCbEB3dcd3A96843b0324a983658bD31393466486", "ts": 1795106113.1284218, "tx_hash": "0xabfeac077b8cb4c920a1a341d3f8db0c2fb30eae6a589c319f4b6162d7ea2bb4"}
+{"amount_usdc": "0.1", "broadcast": true, "from": "0xCbEB3dcd3A96843b0324a983658bD31393466486", "nonce": 1, "to": "0xCbEB3dcd3A96843b0324a983658bD31393466486", "ts": 1795106126.97397, "tx_hash": "0xcb34372e1e257334b4c4ea1e05c404c89cda4ce9be29ffbe2cac4d3e3665d6a8"}

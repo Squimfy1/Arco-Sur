@@ -28,8 +28,10 @@ from eth_account import Account
 import arc
 import guard
 
-KEY_FILE = Path(__file__).parent / ".testnet_key"
-LOG_FILE = Path(__file__).parent / "evidence" / "sends.jsonl"
+# Code lives in src/; the key and the evidence live at the repo root.
+ROOT = Path(__file__).resolve().parent.parent
+KEY_FILE = ROOT / ".testnet_key"
+LOG_FILE = ROOT / "evidence" / "sends.jsonl"
 
 # 21000 is the fixed cost of a plain value transfer.
 GAS_LIMIT = 21000

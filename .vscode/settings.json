@@ -1,0 +1,7 @@
+{
+  // Hide generated clutter from the file sidebar.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  }
+}
