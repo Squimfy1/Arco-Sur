@@ -97,6 +97,26 @@ test("control: an allowed payment does reach the chain, so the fakes would catch
   expect(logLines()[0]).toMatchObject({ broadcast: true, tx_hash: "0xfeed", nonce: 0 });
 });
 
+test("Stage 8: once the receipt arrives, the outcome and its fee are appended", async () => {
+  vi.mocked(arc.simulateCall).mockResolvedValue("0x");
+  vi.mocked(arc.nonce).mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+  vi.mocked(arc.gasPrice).mockResolvedValue(25_000_000_000n);
+  vi.mocked(arc.balanceWei).mockResolvedValue(10n ** 21n);
+  vi.mocked(arc.ask).mockResolvedValue("0xfeed");
+  vi.mocked(arc.receipt).mockResolvedValue({
+    status: "0x1", gasUsed: "0x5208", effectiveGasPrice: "0x4a817c800", blockNumber: "0x10",
+  });
+
+  await send(mandate, account.address, "0.1", { account, logFile });
+
+  const lines = logLines();
+  expect(lines).toHaveLength(2);
+  // 21000 gas × 20 gwei (what the chain charged, not the 25 gwei offered).
+  expect(lines[1]).toMatchObject({
+    type: "outcome", tx_hash: "0xfeed", nonce: 0, status: 1, block: 16, gas_used: 21000, fee_usdc: "0.00042",
+  });
+});
+
 test("a payment the chain would reject is stopped at simulation and never signed", async () => {
   const reason = "execution reverted: insufficient funds";
   vi.mocked(arc.simulateCall).mockRejectedValue(new arc.RpcError(`eth_call: ${reason}`, { code: 3, message: reason }));

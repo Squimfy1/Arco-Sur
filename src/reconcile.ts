@@ -12,6 +12,12 @@
  * the log never recorded is a send that happened without evidence. That is
  * the case a log cannot catch by checking only its own lines.
  *
+ * Finally, follow the money (Stage 8). Every mined transaction cost a fee,
+ * failed ones included. The wallet's balance just before its first logged
+ * transaction, minus every fee, minus every USDC sent to someone else, must
+ * equal its balance now. Whatever is left over moved without being logged:
+ * a deposit, or a send this program never recorded.
+ *
  * Read-only. The log is never edited; the chain is never written to.
  */
 
@@ -20,15 +26,15 @@ import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 
 import * as arc from "./arc.ts";
-import { fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
 import { proveEffect } from "./events.ts";
+import { ARC_USDC_TOKEN, fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
 import { decodeIntent } from "./intent.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const LOG_FILE = join(ROOT, "evidence", "sends.jsonl");
 
 /**
- * One line of evidence/sends.jsonl, as send.ts writes it.
+ * One send line of evidence/sends.jsonl, as send.ts writes it.
  *
  * Native payments carry amount_usdc. Token calls (from Stage 5) carry kind,
  * asset, token, decimals and amount instead; `to` is the real recipient (or
@@ -51,6 +57,30 @@ export type LogRecord = {
   refused_because?: string;
 };
 
+/**
+ * What send.ts appends once a receipt arrives (from Stage 8): the outcome
+ * and the fee it cost. A separate line, because the log is append-only and
+ * the send line was already written before the receipt existed.
+ */
+export type OutcomeRecord = {
+  type: "outcome";
+  ts: number;
+  from: string;
+  tx_hash: string;
+  nonce: number;
+  status: number;
+  block: number | null;
+  gas_used: number;
+  fee_usdc: string;
+};
+
+/** A log record plus its line number, so a report can point at the line. */
+export type Entry = { line: number; record: LogRecord };
+export type OutcomeEntry = { line: number; record: OutcomeRecord };
+
+const isOutcome = (e: Entry | OutcomeEntry): e is OutcomeEntry =>
+  (e.record as { type?: string }).type === "outcome";
+
 /** The amount and asset a line claims, for display. */
 export function claimed(r: LogRecord): { amount: string; asset: string } {
   return (r.kind ?? "native") === "native"
@@ -58,14 +88,13 @@ export function claimed(r: LogRecord): { amount: string; asset: string } {
     : { amount: r.amount ?? "?", asset: r.asset ?? "?" };
 }
 
-/** A log record plus its line number, so a report can point at the line. */
-export type Entry = { line: number; record: LogRecord };
-
-/** The three questions reconcile asks the chain. arc.ts answers them live. */
+/** The questions reconcile asks the chain. arc.ts answers them live. */
 export type Chain = {
   transaction(txHash: string): Promise<arc.ChainTx | null>;
   receipt(txHash: string): Promise<arc.Receipt | null>;
   nonce(address: string): Promise<number | null>;
+  /** Native balance at a past block. null if the node keeps no history. */
+  balanceAt(address: string, block: bigint | "latest"): Promise<bigint | null>;
 };
 
 export type Status =
@@ -76,30 +105,48 @@ export type Status =
   | "REVERTED"   // mined, but failed: no money moved, the fee was still paid
   | "REFUSED";   // the guard said no; nothing was broadcast, nothing to check
 
-export type Row = { entry: Entry; status: Status; problems: string[]; block: bigint | null };
+export type Row = {
+  entry: Entry;
+  status: Status;
+  problems: string[];
+  block: bigint | null;
+  fee: bigint | null;       // gasUsed × effectiveGasPrice, in wei, once mined
+  outflow: bigint;          // USDC (wei) the chain says left this wallet to someone else
+};
+
+export type BalanceCheck = {
+  startBlock: bigint;
+  start: bigint;            // just before the first logged transaction
+  end: bigint;              // now
+  fees: bigint;
+  outflow: bigint;
+  unexplained: bigint;      // (end - start) + fees + outflow; 0 when the log explains everything
+};
 
 export type SenderCheck = {
   address: string;
   chainNonce: number;
-  gaps: number[];        // used on chain, absent from the log
-  duplicates: number[];  // logged more than once
+  gaps: number[];           // used on chain, absent from the log
+  duplicates: number[];     // logged more than once
+  fees: bigint;             // every fee this wallet paid for logged transactions
+  balance: BalanceCheck | null;   // null: nothing mined yet, or no balance history
 };
 
-export type Report = { rows: Row[]; senders: SenderCheck[]; ok: boolean };
+export type Report = { rows: Row[]; senders: SenderCheck[]; orphans: OutcomeEntry[]; ok: boolean };
 
-export function readLog(logFile = LOG_FILE): Entry[] {
+export function readLog(logFile = LOG_FILE): (Entry | OutcomeEntry)[] {
   return readFileSync(logFile, "utf8")
     .split("\n")
     .map((text, i) => ({ text, line: i + 1 }))
     .filter(({ text }) => text.trim() !== "")
-    .map(({ text, line }) => ({ line, record: JSON.parse(text) as LogRecord }));
+    .map(({ text, line }) => ({ line, record: JSON.parse(text) }));
 }
 
-/** Compare one log line with what the chain recorded for its hash. */
-async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
+/** Compare one send line, and any outcome line for it, with what the chain recorded. */
+async function checkRow(entry: Entry, outcomes: OutcomeEntry[], chain: Chain): Promise<Row> {
   const r = entry.record;
-  const row = (status: Status, problems: string[] = [], block: bigint | null = null): Row => ({
-    entry, status, problems, block,
+  const row = (status: Status, problems: string[] = [], block: bigint | null = null, fee: bigint | null = null, outflow = 0n): Row => ({
+    entry, status, problems, block, fee, outflow,
   });
 
   if (!r.broadcast) {
@@ -114,15 +161,23 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
     return row("MISSING", ["the chain has never seen this hash"]);
   }
 
-  const problems: string[] = [];
+  const rcpt = await chain.receipt(r.tx_hash);
+  const block = rcpt ? arc.toInt(rcpt.blockNumber) : null;
+  const chainStatus = rcpt ? arc.toInt(rcpt.status) : null;
+  const gasUsed = rcpt ? arc.toInt(rcpt.gasUsed) : null;
+  const gasPrice = rcpt ? arc.toInt(rcpt.effectiveGasPrice) : null;
+  const fee = gasUsed !== null && gasPrice !== null ? gasUsed * gasPrice : null;
 
-  const logFrom = normalise(r.from);
+  const problems: string[] = [];
+  const sender = normalise(r.from);
+
   const chainFrom = normalise(tx.from);
-  if (logFrom !== chainFrom) {
-    problems.push(`from: log ${logFrom ?? r.from}, chain ${chainFrom ?? tx.from}`);
+  if (sender !== chainFrom) {
+    problems.push(`from: log ${sender ?? r.from}, chain ${chainFrom ?? tx.from}`);
   }
 
   const kind = r.kind ?? "native";
+  let outflow = 0n;   // what the CHAIN says left this wallet, if it succeeded
 
   if (kind === "native") {
     const logTo = normalise(r.to);
@@ -143,6 +198,9 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
     }
     if (tx.input !== undefined && tx.input !== "0x") {
       problems.push("call: log says a plain payment, chain shows a contract call");
+    }
+    if (chainTo !== chainFrom) {
+      outflow = chainValue;
     }
   } else if (tx.to === null) {
     problems.push("call: chain shows a contract creation, not a token call");
@@ -174,6 +232,10 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
         const chainAmount = r.decimals === undefined ? `${onChain.amount} base units` : fromUnits(onChain.amount, r.decimals);
         problems.push(`amount: log ${r.amount} ${r.asset}, chain ${chainAmount} ${r.asset}`);
       }
+      // USDC moved through its token contract leaves the native balance too.
+      if (onChain.kind === "transfer" && normalise(tx.to) === ARC_USDC_TOKEN && normalise(onChain.to) !== chainFrom) {
+        outflow = onChain.amount * 10n ** 12n;
+      }
     }
   }
 
@@ -182,17 +244,28 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
     problems.push(`nonce: log ${r.nonce}, chain ${chainNonce}`);
   }
 
-  if (problems.length > 0) {
-    return row("DIVERGENT", problems);
+  // Stage 8: an outcome line must agree with the receipt it claims to record.
+  if (outcomes.length > 1) {
+    problems.push(`outcome: recorded ${outcomes.length} times (lines ${outcomes.map((o) => o.line).join(", ")})`);
+  }
+  for (const { record: o } of outcomes) {
+    if (chainStatus !== null && BigInt(o.status) !== chainStatus) {
+      problems.push(`outcome: log status ${o.status}, chain ${chainStatus}`);
+    }
+    if (fee !== null && o.fee_usdc !== fromWei(fee)) {
+      problems.push(`fee: log ${o.fee_usdc} USDC, chain ${fromWei(fee)} USDC`);
+    }
   }
 
-  const rcpt = await chain.receipt(r.tx_hash);
+  const succeeded = chainStatus === 1n;
+  if (problems.length > 0) {
+    return row("DIVERGENT", problems, block, fee, succeeded ? outflow : 0n);
+  }
   if (rcpt === null) {
     return row("PENDING");
   }
-  const block = arc.toInt(rcpt.blockNumber);
-  if (arc.toInt(rcpt.status) !== 1n) {
-    return row("REVERTED", [], block);
+  if (!succeeded) {
+    return row("REVERTED", [], block, fee);
   }
 
   // Stage 7: for a token call, status 1 is not enough. The token's own event
@@ -206,14 +279,17 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
       amount: toUnits(r.amount, r.decimals),
     });
     if (!proof.proven) {
-      return row("DIVERGENT", [`events: ${proof.reason}`], block);
+      return row("DIVERGENT", [`events: ${proof.reason}`], block, fee, outflow);
     }
   }
-  return row("MATCHED", [], block);
+  return row("MATCHED", [], block, fee, outflow);
 }
 
-/** Per sender: which nonces the chain has used that the log never recorded. */
-async function checkSender(address: string, entries: Entry[], chain: Chain): Promise<SenderCheck> {
+/**
+ * Per sender: which nonces the chain has used that the log never recorded,
+ * and whether the balance history is explained by the logged transactions.
+ */
+async function checkSender(address: string, entries: Entry[], rows: Row[], chain: Chain): Promise<SenderCheck> {
   const chainNonce = await chain.nonce(address);
   if (chainNonce === null) {
     throw new Error(`node returned no nonce for ${address}`);
@@ -234,14 +310,44 @@ async function checkSender(address: string, entries: Entry[], chain: Chain): Pro
   }
   const duplicates = [...seen].filter(([, count]) => count > 1).map(([n]) => n).sort((a, b) => a - b);
 
-  return { address, chainNonce, gaps, duplicates };
+  // Follow the money: every fee and every USDC that left to someone else.
+  const mine = rows.filter((r) => normalise(r.entry.record.from) === address);
+  const fees = mine.reduce((sum, r) => sum + (r.fee ?? 0n), 0n);
+  const outflow = mine.reduce((sum, r) => sum + r.outflow, 0n);
+
+  const blocks = mine.map((r) => r.block).filter((b): b is bigint => b !== null);
+  let balance: BalanceCheck | null = null;
+  if (blocks.length > 0) {
+    const startBlock = blocks.reduce((a, b) => (b < a ? b : a)) - 1n;
+    const start = await chain.balanceAt(address, startBlock);
+    const end = await chain.balanceAt(address, "latest");
+    if (start !== null && end !== null) {
+      balance = { startBlock, start, end, fees, outflow, unexplained: end - start + fees + outflow };
+    }
+  }
+
+  return { address, chainNonce, gaps, duplicates, fees, balance };
 }
 
-export async function reconcile(entries: Entry[], chain: Chain = arc): Promise<Report> {
+export async function reconcile(lines: readonly (Entry | OutcomeEntry)[], chain: Chain = arc): Promise<Report> {
+  const entries = lines.filter((e): e is Entry => !isOutcome(e));
+  const outcomes = lines.filter(isOutcome);
+
+  const byHash = new Map<string, OutcomeEntry[]>();
+  for (const o of outcomes) {
+    const key = o.record.tx_hash.toLowerCase();
+    byHash.set(key, [...(byHash.get(key) ?? []), o]);
+  }
+
   const rows: Row[] = [];
   for (const entry of entries) {
-    rows.push(await checkRow(entry, chain));
+    const mine = entry.record.tx_hash ? (byHash.get(entry.record.tx_hash.toLowerCase()) ?? []) : [];
+    rows.push(await checkRow(entry, mine, chain));
   }
+
+  // An outcome for a transaction no send line mentions: the log is inconsistent.
+  const sent = new Set(entries.map((e) => e.record.tx_hash?.toLowerCase()).filter(Boolean));
+  const orphans = outcomes.filter((o) => !sent.has(o.record.tx_hash.toLowerCase()));
 
   const addresses = new Set<string>();
   for (const { record } of entries) {
@@ -252,23 +358,24 @@ export async function reconcile(entries: Entry[], chain: Chain = arc): Promise<R
   }
   const senders: SenderCheck[] = [];
   for (const a of addresses) {
-    senders.push(await checkSender(a, entries, chain));
+    senders.push(await checkSender(a, entries, rows, chain));
   }
 
   const ok =
     rows.every((r) => r.status === "MATCHED" || r.status === "REFUSED") &&
-    senders.every((s) => s.gaps.length === 0 && s.duplicates.length === 0);
+    senders.every((s) => s.gaps.length === 0 && s.duplicates.length === 0 && (s.balance?.unexplained ?? 0n) === 0n) &&
+    orphans.length === 0;
 
-  return { rows, senders, ok };
+  return { rows, senders, orphans, ok };
 }
 
 const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 export function formatReport(report: Report): string {
   const out: string[] = [];
-  out.push("line  nonce  status      kind      amount          to            detail");
+  out.push("line  nonce  status      kind      amount          to            fee (USDC)    detail");
 
-  for (const { entry, status, problems, block } of report.rows) {
+  for (const { entry, status, problems, block, fee } of report.rows) {
     const r = entry.record;
     const nonce = r.nonce === undefined ? "-" : String(r.nonce);
     const { amount, asset } = claimed(r);
@@ -278,11 +385,16 @@ export function formatReport(report: Report): string {
     else if (block !== null) detail = `block ${block}`;
     out.push(
       `${String(entry.line).padEnd(5)} ${nonce.padEnd(6)} ${status.padEnd(11)} ` +
-        `${(r.kind ?? "native").padEnd(9)} ${`${shown} ${asset}`.padEnd(15)} ${short(r.to).padEnd(13)} ${detail}`,
+        `${(r.kind ?? "native").padEnd(9)} ${`${shown} ${asset}`.padEnd(15)} ${short(r.to).padEnd(13)} ` +
+        `${(fee === null ? "-" : (fromWei(fee) ?? "-")).padEnd(13)} ${detail}`,
     );
     for (const p of problems) {
       out.push(`${" ".repeat(25)}↳ ${p}`);
     }
+  }
+
+  for (const o of report.orphans) {
+    out.push(`line ${o.line}: outcome for ${short(o.record.tx_hash)}, a transaction no line records sending`);
   }
 
   out.push("");
@@ -295,6 +407,21 @@ export function formatReport(report: Report): string {
     );
     if (s.duplicates.length > 0) {
       out.push(`  logged twice: ${s.duplicates.join(", ")} — at most one of each can be real`);
+    }
+    out.push(`  fees paid: ${fromWei(s.fees)} USDC`);
+    const b = s.balance;
+    if (b === null) {
+      out.push("  balance: not checked (nothing mined yet, or the node keeps no balance history)");
+    } else {
+      out.push(`  balance before the first logged transaction (block ${b.startBlock}): ${fromWei(b.start)} USDC`);
+      out.push(`  minus fees ${fromWei(b.fees)}, minus sent to others ${fromWei(b.outflow)}: expect ${fromWei(b.start - b.fees - b.outflow)} USDC`);
+      out.push(`  balance now: ${fromWei(b.end)} USDC`);
+      out.push(
+        b.unexplained === 0n
+          ? "  unexplained: 0 — every USDC of change is accounted for"
+          : `  unexplained: ${fromWei(b.unexplained)} USDC — moved without being logged ` +
+              `(${b.unexplained > 0n ? "a deposit, or a refund" : "a send or fee the log never recorded"})`,
+      );
     }
   }
 

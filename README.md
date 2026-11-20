@@ -55,8 +55,11 @@ npm run reconcile   # every log line vs the chain; exit code 1 if they disagree
 ```
 
 It reports each line as MATCHED, DIVERGENT (naming both values), PENDING,
-MISSING, REVERTED or REFUSED, and lists any nonce the chain has used that the
-log never recorded.
+MISSING, REVERTED or REFUSED, with the fee it cost; token calls must also be
+proven by the token's own event. It lists any nonce the chain has used that
+the log never recorded, and follows the money: the balance before the first
+logged transaction, minus every fee and every USDC sent to others, must equal
+the balance now. Anything left over is reported as unexplained.
 
 ```
 npm run balances                     # native USDC + every registered token

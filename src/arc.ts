@@ -78,6 +78,12 @@ export async function balanceWei(address: string): Promise<bigint | null> {
   return toInt(await ask("eth_getBalance", [address, "latest"]));
 }
 
+/** Native balance as it was at a past block (or "latest"). */
+export async function balanceAt(address: string, block: bigint | "latest"): Promise<bigint | null> {
+  const tag = block === "latest" ? "latest" : "0x" + block.toString(16);
+  return toInt(await ask("eth_getBalance", [address, tag]));
+}
+
 /**
  * Transactions already sent from this address.
  *

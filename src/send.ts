@@ -259,6 +259,17 @@ export async function execute(
       `(${status === 1n ? "SUCCESS" : "REVERTED"}) gasUsed=${gasUsed}`,
   );
 
+  // Stage 8: what it cost. Paid whether it succeeded or not. A new line,
+  // because the send line is already written and the log is never edited.
+  const fee = (gasUsed ?? 0n) * (arc.toInt(r.effectiveGasPrice) ?? price);
+  const block = arc.toInt(r.blockNumber);
+  log({
+    type: "outcome", ts: Date.now() / 1000, from: acct.address, tx_hash: txHash, nonce: n,
+    status: Number(status ?? 0n), block: block === null ? null : Number(block),
+    gas_used: Number(gasUsed ?? 0n), fee_usdc: guard.fromWei(fee),
+  }, logFile);
+  console.log(`fee: ${guard.fromWei(fee)} USDC (gasUsed × effectiveGasPrice)`);
+
   // 5. Reconcile: intended vs actual.
   if (status === 1n) {
     const after = await arc.nonce(acct.address);

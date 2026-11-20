@@ -1,14 +1,21 @@
 # Arc build plan — every feature a crypto app needs, with its test
 
-**Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
-mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
-chain), `src/contracts.ts` + `src/read.ts` (read any contract),
-`src/intent.ts` (decode what a transaction does), `src/simulate.ts` (rehearse
-before signing), `src/events.ts` (proof from receipts), `src/account.ts` (the
-key),
-and offline tests across `tests/`. Stages 1–7 are done; 1–3 alone are a
-complete execution system. Ported from Python on
-2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
+**Where we are.** The backend is done: Stages 1–8. TypeScript, chain ID
+5042002, ported from Python on 2026-11-20 (the Python version is the git tag
+`python-v1`). Next is the interface, Stages 9–10; Stage 11 (keystore) comes
+before any real money.
+
+| File | Job | Stage |
+|---|---|---|
+| `src/arc.ts` | RPC client: every question to the chain | 1, grown since |
+| `src/account.ts` | loads the throwaway testnet key | 1 (moved in 5) |
+| `src/guard.ts` | the mandate: recipients, limits, tokens, spenders | 1, 2, 5 |
+| `src/intent.ts` | decodes what a transaction actually does | 5 |
+| `src/simulate.ts` | rehearses a transaction before signing | 6 |
+| `src/events.ts` | proves a token call from its receipt's events | 7 |
+| `src/send.ts` | the pipeline: decode, guard, simulate, sign, verify, log | 1, 2, 5–8 |
+| `src/reconcile.ts` | the log against the chain, and the money against the balance | 3, 5, 7, 8 |
+| `src/contracts.ts` + `src/read.ts` | read any registered contract | 4 |
 
 **The rule for the whole plan.** No stage is finished until its test passes.
 The test comes first where it can. A stage you cannot test is a stage you do
@@ -275,7 +282,7 @@ makes the forged-event test fail.
 
 ---
 
-## Stage 8 · Gas, fees, and the cost of being wrong  ·  NEXT
+## Stage 8 · Gas, fees, and the cost of being wrong  ·  DONE
 
 **Concept: you pay for computation whether or not it succeeds.** A reverted
 transaction still costs gas.
@@ -286,9 +293,32 @@ transaction still costs gas.
 explained by transfers. If they do not agree, something moved that you did not
 record.
 
+**Result (2026-11-20):**
+- `send.ts` appends an **outcome line** once the receipt arrives: status,
+  block, gas used and `fee_usdc` (gasUsed × effectiveGasPrice, paid whether
+  it succeeded or not). A separate line, because the send line is written
+  before the receipt exists and the log is never edited.
+- `reconcile.ts` computes every row's fee from its receipt and checks any
+  outcome line against it (fee, status, duplicates, orphans). Per sender it
+  reads the native balance just before the first logged transaction
+  (`eth_getBalance` at a past block; Arc's RPC keeps history) and now, and
+  requires `start − fees − USDC sent to others = now`. USDC moved through
+  its token contract counts as leaving the native balance. Any remainder is
+  reported as unexplained and the run is NOT RECONCILED.
+- This is the balance-delta check deferred from Stage 3.
+
+Live: before any new send, 40 USDC at block 73,047,006, minus 8 fees
+totalling 0.0045404389, equalled the balance exactly: unexplained 0. A new
+send (nonce 8) wrote its outcome line (`fee_usdc: 0.0004305`) and the run
+stayed RECONCILED. On a copy with nonce 3's line deleted, the reconciler
+found it twice over: nonce gap 3, and `unexplained: -0.00042 USDC`, which is
+exactly that transaction's fee. 10 offline tests in the reconciler (deposit,
+payment to others, USDC via token, reverted fee, outcome mismatch, orphan,
+no history) and one in `send.test.ts`.
+
 ---
 
-## Stage 9 · The interface, read-only
+## Stage 9 · The interface, read-only  ·  NEXT
 
 **Concept: the view renders, it never calculates.** Everything displayed comes
 from the log or the chain.
