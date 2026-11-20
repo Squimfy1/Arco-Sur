@@ -3,3 +3,6 @@
 
 __pycache__/
 .pytest_cache/
+
+# Project Python environment. Rebuild it from requirements.txt.
+.venv/

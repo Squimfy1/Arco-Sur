@@ -7,7 +7,7 @@ signed, and a log that is checked against the chain afterwards.
 
 ```
 src/        the code
-  arc.py      talks to the Arc chain (read-only RPC)
+  arc.py      talks to the Arc chain (RPC client)
   guard.py    the mandate: who may be paid, and how much
   send.py     the send loop; this is the file you run
 tests/      offline tests for the guard
@@ -18,8 +18,17 @@ scratch/    early experiments, not used by the code
 
 ## Run
 
+First time only, create the project environment:
+
 ```
-pip install eth-account pytest
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+Then, in each new terminal:
+
+```
+source .venv/bin/activate
 
 pytest              # 17 guard tests, no network
 python src/send.py  # sends 0.1 USDC to your own wallet

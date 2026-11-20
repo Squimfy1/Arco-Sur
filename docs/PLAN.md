@@ -14,7 +14,7 @@ ideas, it is two stages.
 
 ---
 
-## Stage 1 · Send and verify  ·  NEXT
+## Stage 1 · Send and verify  ·  DONE
 
 The complete loop for moving native USDC on Arc.
 
@@ -32,9 +32,15 @@ broadcast → poll receipt → reconcile nonce advanced.
 print `UNKNOWN` and say *do not resend*. Verify by setting the timeout to 1
 second artificially — you should get `UNKNOWN`, never a guess.
 
+**Result (2026-11-20):** four live sends, nonces 0–3, all `status=1`, all in
+`evidence/sends.jsonl`. Timeout case run with the timeout forced to 0s: the
+script printed `UNKNOWN` and *do not resend* for nonce 3, and the same
+transaction was then found mined with `status=1` in block 73,202,353. That is
+the double-send a blind retry would have caused.
+
 ---
 
-## Stage 2 · The allowlist proves itself
+## Stage 2 · The allowlist proves itself  ·  NEXT
 
 **Concept: a refusal is a feature, and it must be recorded.** Most wallets
 have no concept of a forbidden destination.
