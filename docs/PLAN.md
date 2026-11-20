@@ -3,8 +3,9 @@
 **Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
 mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
 chain), `src/contracts.ts` + `src/read.ts` (read any contract),
-`src/intent.ts` (decode what a transaction does), `src/account.ts` (the key),
-and offline tests across `tests/`. Stages 1–5 are done; 1–3 alone are a
+`src/intent.ts` (decode what a transaction does), `src/simulate.ts` (rehearse
+before signing), `src/account.ts` (the key),
+and offline tests across `tests/`. Stages 1–6 are done; 1–3 alone are a
 complete execution system. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
@@ -208,7 +209,7 @@ reconciler; switching off the decoded-amount check fails the billion test.
 
 ---
 
-## Stage 6 · Simulate before send  ·  NEXT
+## Stage 6 · Simulate before send  ·  DONE
 
 **Concept: `eth_estimateGas` and `eth_call` tell you whether a transaction
 would revert — before you spend anything.** Tenderly is a whole company built
@@ -220,9 +221,27 @@ the call reverts, abort and log the revert reason.
 **Test:** send to a contract that will revert. The loop must stop at simulate
 and never broadcast.
 
+**Result (2026-11-20):** `src/simulate.ts` rehearses the whole transaction
+(`eth_call` with from, to, value and data), then estimates gas for contract
+calls (+20%). Plain payments keep the fixed 21,000. A token call must return
+`true`: returning `false` or nothing is a failure even without a revert. A
+node refusal becomes a logged reason (`refused_because: "simulation: …"`);
+any other error (network down) is not swallowed. `RpcError` now keeps the
+node's error object, so the reason is the chain's own words. `send.ts` runs
+it after the guard and before the nonce is read.
+
+Live: 0.5 EURC to self with 0 EURC held. The guard allowed it (within the
+EURC rules); simulation stopped it with `execution reverted: ERC20: transfer
+amount exceeds balance`. Nonce stayed 7 and the balance was unchanged. 6
+offline tests in `tests/simulate.test.ts`, plus one in `send.test.ts`
+proving a simulated revert never reaches the nonce or the broadcast.
+
+Limit: a rehearsal runs against the state now. Another transaction can land
+first and change it, so simulation catches "cannot work", not "will work".
+
 ---
 
-## Stage 7 · Events and logs
+## Stage 7 · Events and logs  ·  NEXT
 
 **Concept: contracts report what happened through logs, and a receipt's
 `logs` array is the only proof of what a call actually did.** `status=1` means

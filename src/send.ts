@@ -5,6 +5,8 @@
  *
  *     1. decode + guard     decide BEFORE signing, on what the transaction
  *                           actually does. No mandate, no transaction.
+ *    1b. simulate           rehearse it on the node. Would revert? Stop: a
+ *                           failed transaction still costs gas.
  *     2. nonce              read it once, reuse it on retry. This is the
  *                           protocol's idempotency key.
  *     3. sign + broadcast
@@ -37,13 +39,10 @@ import { CONTRACTS, EURC, type KnownContract, TOKENS } from "./contracts.ts";
 import * as guard from "./guard.ts";
 import { decodeIntent, encodeApprove, encodeTransfer, type TxRequest } from "./intent.ts";
 import { tokenInfo } from "./read.ts";
+import { simulate } from "./simulate.ts";
 
 // Code lives in src/; the evidence lives at the repo root.
 const LOG_FILE = join(import.meta.dirname, "..", "evidence", "sends.jsonl");
-
-// 21000 is the fixed cost of a plain value transfer. A contract call costs
-// more and varies, so it is estimated, plus a 20% margin.
-const NATIVE_GAS = 21000n;
 
 export { loadAccount };
 
@@ -153,8 +152,8 @@ export async function execute(
   { account, logFile = LOG_FILE, receiptTimeoutMs = 120_000 }: SendOptions = {},
 ): Promise<string | null> {
   const acct = account ?? loadAccount();
-  const refuseAndLog = (fields: Record<string, unknown>, reason: string): null => {
-    console.log(`guard: REFUSE — ${reason}`);
+  const refuseAndLog = (fields: Record<string, unknown>, reason: string, label = "guard: REFUSE"): null => {
+    console.log(`${label} — ${reason}`);
     log({ ts: Date.now() / 1000, from: acct.address, ...fields, broadcast: false, refused_because: reason }, logFile);
     return null;
   };
@@ -198,10 +197,18 @@ export async function execute(
   }
   console.log(`guard: ALLOW — ${verdict.reason}`);
 
+  // 1b. REHEARSE. The node runs the transaction without keeping it. If it
+  //     would revert, it would still cost gas for nothing: stop here.
+  const sim = await simulate(acct.address, tx);
+  if (!sim.ok) {
+    return refuseAndLog(entry, `simulation: ${sim.reason}`, "simulate: REVERT");
+  }
+  console.log(`simulate: OK — gas limit ${sim.gas}`);
+  const gas = sim.gas;
+
   // 2. Nonce: read once. On retry this same value must be reused.
   const n = required(await arc.nonce(acct.address), "nonce");
   const price = required(await arc.gasPrice(), "gas price");
-  const gas = tx.data === "0x" ? NATIVE_GAS : ((await arc.estimateGas(acct.address, tx)) * 120n) / 100n;
 
   const balance = required(await arc.balanceWei(acct.address), "balance");
   const cost = tx.value + gas * price;

@@ -14,6 +14,7 @@ src/        the code
   account.ts    loads the throwaway testnet key
   guard.ts      the mandate: who may be paid, how much, which tokens
   intent.ts     decodes what a transaction actually does
+  simulate.ts   rehearses a transaction on the node before signing
   send.ts       the send loop; this is the file you run
   reconcile.ts  checks the evidence log against the chain
   contracts.ts  the Arc contracts a user needs: address + ABI
@@ -44,7 +45,9 @@ npm run send -- --token EURC --approve 0x… --amount 0.5   # a token approval
 The guard still decides, on what the transaction actually does: a token
 transfer's `value` is 0, so its recipient and amount are decoded from the
 calldata. Anything outside the mandate in `send.ts` is refused and logged,
-never signed. Unlimited approvals are always refused.
+never signed. Unlimited approvals are always refused. A transaction the chain
+would revert is rehearsed first and stopped with the chain's own reason, so a
+failure never costs gas.
 
 ```
 npm run reconcile   # every log line vs the chain; exit code 1 if they disagree

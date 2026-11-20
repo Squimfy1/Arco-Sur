@@ -1,5 +1,6 @@
 /**
  * Stage 2: a refused payment is recorded, and never signed or broadcast.
+ * Stage 6: a payment the chain would reject is stopped at simulation.
  *
  * The chain client is replaced with fakes that record every call, so the
  * test can prove the guard ran BEFORE anything touched the network. A
@@ -21,6 +22,8 @@ vi.mock("../src/arc.ts", async (importOriginal) => ({
   gasPrice: vi.fn(),
   balanceWei: vi.fn(),
   receipt: vi.fn(),
+  simulateCall: vi.fn(),
+  estimateGas: vi.fn(),
 }));
 
 import * as arc from "../src/arc.ts";
@@ -60,7 +63,8 @@ test("a refused payment is logged with its reason and never reaches the chain", 
 
   expect(result).toBeNull();
 
-  // Nothing was asked of the chain: no nonce, no price, no broadcast.
+  // Nothing was asked of the chain: no rehearsal, no nonce, no price, no broadcast.
+  expect(arc.simulateCall).not.toHaveBeenCalled();
   expect(arc.nonce).not.toHaveBeenCalled();
   expect(arc.gasPrice).not.toHaveBeenCalled();
   expect(arc.balanceWei).not.toHaveBeenCalled();
@@ -78,6 +82,7 @@ test("a refused payment is logged with its reason and never reaches the chain", 
 test("control: an allowed payment does reach the chain, so the fakes would catch a leak", async () => {
   // Without this test, the one above could pass simply because the fakes
   // never record anything.
+  vi.mocked(arc.simulateCall).mockResolvedValue("0x");
   vi.mocked(arc.nonce).mockResolvedValueOnce(0).mockResolvedValueOnce(1);
   vi.mocked(arc.gasPrice).mockResolvedValue(20_000_000_000n);
   vi.mocked(arc.balanceWei).mockResolvedValue(10n ** 21n);
@@ -87,6 +92,25 @@ test("control: an allowed payment does reach the chain, so the fakes would catch
   const result = await send(mandate, account.address, "0.1", { account, logFile });
 
   expect(result).toBe("0xfeed");
+  expect(arc.simulateCall).toHaveBeenCalledOnce();
   expect(arc.ask).toHaveBeenCalledWith("eth_sendRawTransaction", [expect.stringMatching(/^0x/)]);
   expect(logLines()[0]).toMatchObject({ broadcast: true, tx_hash: "0xfeed", nonce: 0 });
+});
+
+test("a payment the chain would reject is stopped at simulation and never signed", async () => {
+  const reason = "execution reverted: insufficient funds";
+  vi.mocked(arc.simulateCall).mockRejectedValue(new arc.RpcError(`eth_call: ${reason}`, { code: 3, message: reason }));
+
+  const result = await send(mandate, account.address, "0.1", { account, logFile });
+
+  expect(result).toBeNull();
+  expect(arc.simulateCall).toHaveBeenCalledOnce();
+  // Stopped before the nonce was read, so nothing could have been signed.
+  expect(arc.nonce).not.toHaveBeenCalled();
+  expect(arc.ask).not.toHaveBeenCalled();
+
+  const lines = logLines();
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).toMatchObject({ broadcast: false, refused_because: `simulation: ${reason}` });
+  expect(lines[0]).not.toHaveProperty("tx_hash");
 });

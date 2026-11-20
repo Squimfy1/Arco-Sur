@@ -17,6 +17,19 @@ const UA =
 /** The node answered, and its answer was an error. */
 export class RpcError extends Error {
   name = "RpcError";
+  /** The node's own error object, e.g. {code: 3, message: "execution reverted: …"}. */
+  readonly detail: unknown;
+
+  constructor(message: string, detail?: unknown) {
+    super(message);
+    this.detail = detail;
+  }
+
+  /** The node's message alone, without the method name and JSON around it. */
+  get reason(): string {
+    const m = (this.detail as { message?: unknown } | undefined)?.message;
+    return typeof m === "string" ? m : this.message;
+  }
 }
 
 /**
@@ -41,7 +54,7 @@ export async function ask(method: string, params: unknown[] = [], timeoutMs = 25
   const payload = (await res.json()) as { result?: unknown; error?: unknown };
 
   if (payload.error !== undefined) {
-    throw new RpcError(`${method}: ${JSON.stringify(payload.error)}`);
+    throw new RpcError(`${method}: ${JSON.stringify(payload.error)}`, payload.error);
   }
 
   return payload.result ?? null;
@@ -124,6 +137,21 @@ export async function transaction(txHash: string): Promise<ChainTx | null> {
  */
 export async function call(to: string, data: `0x${string}`): Promise<`0x${string}`> {
   return (await ask("eth_call", [{ to, data }, "latest"])) as `0x${string}`;
+}
+
+/**
+ * Run a whole transaction (from, to, value, data) on the node without
+ * sending it, and return what it would return. Throws RpcError with the
+ * reason if it would revert. Used to rehearse a send before signing it.
+ */
+export async function simulateCall(
+  from: string,
+  tx: { to: string; value: bigint; data: `0x${string}` },
+): Promise<`0x${string}`> {
+  return (await ask("eth_call", [
+    { from, to: tx.to, value: "0x" + tx.value.toString(16), data: tx.data },
+    "latest",
+  ])) as `0x${string}`;
 }
 
 /**
