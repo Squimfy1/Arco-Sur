@@ -1,8 +1,9 @@
 # Arc build plan — every feature a crypto app needs, with its test
 
-**Where we are.** TypeScript, 656 lines: `src/arc.ts` (RPC client),
-`src/guard.ts` (the mandate), `src/send.ts` (the five-stage loop),
-`tests/guard.test.ts` (18 tests, 13 of them refusals). Ported from Python on
+**Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
+mandate), `src/send.ts` (the five-stage loop), `tests/guard.test.ts` (18
+tests, 13 of them refusals) and `tests/send.test.ts` (2 tests: a refusal
+never reaches the chain). Stages 1 and 2 are done. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
 **The rule for the whole plan.** No stage is finished until its test passes.
@@ -45,7 +46,7 @@ transaction byte-for-byte identically to eth-account. Live send at nonce 4,
 
 ---
 
-## Stage 2 · The allowlist proves itself  ·  NEXT
+## Stage 2 · The allowlist proves itself  ·  DONE
 
 **Concept: a refusal is a feature, and it must be recorded.** Most wallets
 have no concept of a forbidden destination.
@@ -55,9 +56,21 @@ have no concept of a forbidden destination.
 **Test:** the log gains a line with `verdict=REFUSE`, a stated reason, and
 **no transaction hash**. If a hash appears, the guard ran too late.
 
+**Result (2026-11-20):** `send.ts` now takes `--to` and `--amount`, so no code
+is edited to point it elsewhere. Live run to `0x1111…1111`: `guard: REFUSE —
+recipient not on the allowlist`, and the log gained a line with
+`broadcast: false`, the reason in `refused_because`, and no `tx_hash` or
+`nonce`. Nonce stayed at 6 and the balance was unchanged before and after,
+and the refusal did not count toward the 5 USDC total (still 0.6).
+
+Also an offline test, `tests/send.test.ts`, with the chain replaced by fakes
+that record every call: a refused payment makes **zero** chain calls and
+writes the refusal line. A control test proves the fakes do record a real
+broadcast, and switching the allowlist check off makes the refusal test fail.
+
 ---
 
-## Stage 3 · Reconciliation  ·  the employable one
+## Stage 3 · Reconciliation  ·  the employable one  ·  NEXT
 
 **Concept: two records of the same events, no shared clock, either may be
 stale.** This is the distributed-data topic, and it is Roxom's posting

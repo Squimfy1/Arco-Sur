@@ -21,6 +21,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { parseArgs } from "node:util";
 
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
@@ -63,18 +64,18 @@ function pythonStyleJson(record: Record<string, unknown>): string {
 }
 
 /** Append-only evidence. One JSON object per line, never rewritten. */
-function log(record: Record<string, unknown>): void {
-  mkdirSync(dirname(LOG_FILE), { recursive: true });
-  appendFileSync(LOG_FILE, pythonStyleJson(record) + "\n");
+function log(record: Record<string, unknown>, logFile: string): void {
+  mkdirSync(dirname(logFile), { recursive: true });
+  appendFileSync(logFile, pythonStyleJson(record) + "\n");
 }
 
 /** Total USDC this script has recorded as broadcast from this address. */
-export function alreadySent(sender: string): string {
-  if (!existsSync(LOG_FILE)) {
+export function alreadySent(sender: string, logFile = LOG_FILE): string {
+  if (!existsSync(logFile)) {
     return "0";
   }
   let total = 0n;
-  for (const line of readFileSync(LOG_FILE, "utf8").split("\n")) {
+  for (const line of readFileSync(logFile, "utf8").split("\n")) {
     if (!line.trim()) {
       continue;
     }
@@ -107,20 +108,30 @@ function required<T>(value: T | null, what: string): T {
   return value;
 }
 
+/**
+ * Options exist so tests can use a throwaway wallet and a temporary log,
+ * and never touch the real key or the real evidence.
+ */
+export type SendOptions = {
+  account?: PrivateKeyAccount;
+  logFile?: string;
+  receiptTimeoutMs?: number;
+};
+
 export async function send(
   mandate: guard.Mandate,
   to: string,
   amountUsdc: string,
-  { receiptTimeoutMs = 120_000 } = {},
+  { account, logFile = LOG_FILE, receiptTimeoutMs = 120_000 }: SendOptions = {},
 ): Promise<string | null> {
-  const acct = loadAccount();
+  const acct = account ?? loadAccount();
 
   // 1. DECIDE FIRST. Nothing is signed until the mandate allows it.
   const verdict = guard.check(mandate, {
     to,
     amountUsdc,
     chainId: arc.CHAIN_ID,
-    alreadySentUsdc: alreadySent(acct.address),
+    alreadySentUsdc: alreadySent(acct.address, logFile),
   });
   console.log(`guard: ${verdict.allowed ? "ALLOW" : "REFUSE"} — ${verdict.reason}`);
   if (!verdict.allowed) {
@@ -128,7 +139,7 @@ export async function send(
       ts: Date.now() / 1000, from: acct.address, to,
       amount_usdc: amountUsdc, broadcast: false,
       refused_because: verdict.reason,
-    });
+    }, logFile);
     return null;
   }
 
@@ -165,7 +176,7 @@ export async function send(
     ts: Date.now() / 1000, from: acct.address, to,
     amount_usdc: amountUsdc, nonce: n,
     tx_hash: txHash, broadcast: true,
-  });
+  }, logFile);
   console.log(`broadcast: ${txHash}`);
 
   // 4. Verify. What actually happened, not what was intended.
@@ -197,7 +208,20 @@ export async function send(
 
 // Runs only when this file is started directly (node src/send.ts),
 // never when another file imports it.
+//
+//   npm run send                                  0.1 USDC to yourself
+//   npm run send -- --to 0x… --amount 0.25        choose recipient and amount
+//
+// The guard still decides: a recipient or amount outside the mandate is
+// refused and logged, not sent.
 if (import.meta.main) {
+  const { values: args } = parseArgs({
+    options: {
+      to: { type: "string" },
+      amount: { type: "string", default: "0.1" },
+    },
+  });
+
   const acct = loadAccount();
   const me = acct.address;
   console.log(`address: ${me}`);
@@ -211,5 +235,5 @@ if (import.meta.main) {
     chainId: arc.CHAIN_ID,
   });
 
-  await send(mandate, me, "0.1");
+  await send(mandate, args.to ?? me, args.amount, { account: acct });
 }
