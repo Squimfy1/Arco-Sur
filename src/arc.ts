@@ -55,7 +55,7 @@ export function toInt(hex: unknown): bigint | null {
   return BigInt(hex as string);
 }
 
-// --- the five calls the execution loop needs -------------------------------
+// --- the calls the execution loop and the reconciler need ------------------
 
 export async function blockNumber(): Promise<bigint | null> {
   return toInt(await ask("eth_blockNumber"));
@@ -91,4 +91,23 @@ export type Receipt = {
 /** null while pending. Once mined: status 1 = success, 0 = reverted. */
 export async function receipt(txHash: string): Promise<Receipt | null> {
   return (await ask("eth_getTransactionReceipt", [txHash])) as Receipt | null;
+}
+
+/** The transaction fields this project reads. The node sends more. */
+export type ChainTx = {
+  hash: string;
+  from: string;
+  to: string | null;
+  value: string;
+  nonce: string;
+  blockNumber: string | null;
+};
+
+/**
+ * What a transaction actually contained, as the chain recorded it.
+ * null if the chain has never seen this hash. The receipt says whether it
+ * succeeded; this says who, to whom, and how much.
+ */
+export async function transaction(txHash: string): Promise<ChainTx | null> {
+  return (await ask("eth_getTransactionByHash", [txHash])) as ChainTx | null;
 }

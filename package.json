@@ -8,7 +8,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc",
-    "send": "node src/send.ts"
+    "send": "node src/send.ts",
+    "reconcile": "node src/reconcile.ts"
   },
   "dependencies": {
     "viem": "2.58.2"

@@ -1,9 +1,9 @@
 # Arc build plan — every feature a crypto app needs, with its test
 
 **Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
-mandate), `src/send.ts` (the five-stage loop), `tests/guard.test.ts` (18
-tests, 13 of them refusals) and `tests/send.test.ts` (2 tests: a refusal
-never reaches the chain). Stages 1 and 2 are done. Ported from Python on
+mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
+chain), and 30 offline tests across `tests/`. Stages 1, 2 and 3 are done:
+that is a complete execution system. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
 **The rule for the whole plan.** No stage is finished until its test passes.
@@ -70,7 +70,7 @@ broadcast, and switching the allowlist check off makes the refusal test fail.
 
 ---
 
-## Stage 3 · Reconciliation  ·  the employable one  ·  NEXT
+## Stage 3 · Reconciliation  ·  the employable one  ·  DONE
 
 **Concept: two records of the same events, no shared clock, either may be
 stale.** This is the distributed-data topic, and it is Roxom's posting
@@ -91,9 +91,31 @@ equal the balance delta.
 Case 3 is the important one. A log that only catches its own errors is not a
 reconciler.
 
+**Result (2026-11-20):** `npm run reconcile` checks every line against
+`eth_getTransactionByHash` (who, to whom, how much, which nonce) and the
+receipt (did it succeed), and labels it MATCHED, DIVERGENT, PENDING, MISSING,
+REVERTED or REFUSED. Per sender it compares logged nonces with the chain's
+count and reports gaps and duplicates. Exit code 1 when anything disagrees.
+
+Live, on the real log: 6 matched, 1 refused, no gaps, `RECONCILED`. Live, on
+copies (the real log is append-only and was not touched):
+1. Clean → all `MATCHED`.
+2. Nonce 2's amount changed to 0.5 → `DIVERGENT` on that line only:
+   `amount: log 0.5 USDC, chain 0.1 USDC`.
+3. Nonce 3's line deleted → `nonce gaps: 3 — on chain, NOT in the log`.
+
+Offline: `tests/reconcile.test.ts`, 10 tests against a fake chain, covering
+the three cases plus wrong recipient, unknown hash, pending, reverted,
+duplicate nonce, and a refusal that is never looked up.
+
+**Deferred to Stage 8:** "does the sum of logged sends equal the balance
+delta". Every send so far went to this same wallet, so the only thing that
+moves the balance is fees, and fees are Stage 8's concept. Incoming funds
+(the faucet) also need a starting balance the log does not have.
+
 ---
 
-## Stage 4 · Read a token balance (ERC-20)
+## Stage 4 · Read a token balance (ERC-20)  ·  NEXT
 
 **Concept: `eth_call` is a read with no transaction, no gas, no nonce.** You
 execute a contract function locally on a node and throw the result away.
@@ -199,6 +221,30 @@ line is identical in shape to a CLI send.
 
 ---
 
+## Stage 11 · Keystore  ·  before any real money
+
+**Concept: the key is the wallet.** Today `.testnet_key` is plain text, so
+anyone who reads that one file skips the guard entirely. Deferred on purpose
+while this is testnet-only; it must be done before a key holding real funds
+goes anywhere near this code.
+
+**Build:** `src/keystore.ts` writes and reads the standard v3 keystore
+(scrypt + AES-128-CTR + keccak MAC), using Node's crypto and viem's keccak,
+no new packages. `npm run keystore:create` converts `.testnet_key` once and
+re-opens the result to check the address. `send.ts` asks for the password
+with a hidden prompt and keeps the key in memory only. Then `.testnet_key` is
+deleted.
+
+**Test:** the official test vector from the Ethereum keystore spec decrypts
+to its known key; a round trip returns the same key; a wrong password is
+refused; the file contains no plaintext key; two encryptions of the same key
+differ. Live: one send unlocked by password.
+
+This also feeds the Stage 10 choice: a server holding an encrypted keystore,
+or MetaMask holding the key in its own vault and signing in the browser.
+
+---
+
 ## Then one of two forks
 
 **A · Write a contract.** Arc is EVM, so Solidity. The smallest useful one is
@@ -228,6 +274,7 @@ have been told three times about spreads you cannot verify.
 | 8 | account for fees | cost accounting |
 | 9 | render | view/compute separation |
 | 10 | act from UI | one code path |
+| 11 | encrypted key storage | the key is the wallet |
 
 That is a crypto application's full read-write-verify surface, and every row
 has a test. Stages 1 to 3 alone are a complete execution system and the part
