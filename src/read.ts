@@ -165,7 +165,7 @@ if (import.meta.main) {
   const { values: args } = parseArgs({ options: { address: { type: "string" } } });
   let holder = args.address;
   if (holder === undefined) {
-    const { loadAccount } = await import("./send.ts");
+    const { loadAccount } = await import("./account.ts");
     holder = loadAccount().address;
   }
   if (guard.normalise(holder) === null) {

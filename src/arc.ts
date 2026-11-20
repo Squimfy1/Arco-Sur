@@ -101,6 +101,7 @@ export type ChainTx = {
   value: string;
   nonce: string;
   blockNumber: string | null;
+  input: string;   // the calldata: "0x" for a plain payment, encoded call otherwise
 };
 
 /**
@@ -123,6 +124,24 @@ export async function transaction(txHash: string): Promise<ChainTx | null> {
  */
 export async function call(to: string, data: `0x${string}`): Promise<`0x${string}`> {
   return (await ask("eth_call", [{ to, data }, "latest"])) as `0x${string}`;
+}
+
+/**
+ * How much gas this transaction would use if sent now. The node runs it
+ * without keeping the result; if it would revert, this throws RpcError with
+ * the reason (e.g. "ERC20: transfer amount exceeds balance").
+ */
+export async function estimateGas(
+  from: string,
+  tx: { to: string; value: bigint; data: `0x${string}` },
+): Promise<bigint> {
+  const gas = toInt(
+    await ask("eth_estimateGas", [{ from, to: tx.to, value: "0x" + tx.value.toString(16), data: tx.data }]),
+  );
+  if (gas === null) {
+    throw new RpcError("eth_estimateGas: node returned no estimate");
+  }
+  return gas;
 }
 
 /** The contract's deployed bytecode. "0x" means there is no contract there. */

@@ -2,9 +2,10 @@
 
 **Where we are.** TypeScript: `src/arc.ts` (RPC client), `src/guard.ts` (the
 mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
-chain), `src/contracts.ts` + `src/read.ts` (read any contract), and 41
-offline tests across `tests/`. Stages 1–4 are done; 1–3 alone are a complete
-execution system. Ported from Python on
+chain), `src/contracts.ts` + `src/read.ts` (read any contract),
+`src/intent.ts` (decode what a transaction does), `src/account.ts` (the key),
+and offline tests across `tests/`. Stages 1–5 are done; 1–3 alone are a
+complete execution system. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
 **The rule for the whole plan.** No stage is finished until its test passes.
@@ -166,7 +167,7 @@ The selector table above was checked against keccak. 11 offline tests in
 
 ---
 
-## Stage 5 · Send a token, and the approval trap  ·  NEXT
+## Stage 5 · Send a token, and the approval trap  ·  DONE
 
 **Concept: an ERC-20 transfer is a contract call, not a value transfer.** The
 amount lives in the calldata, not in the `value` field. And `approve` grants
@@ -181,9 +182,33 @@ zero.
 sees the true amount. Then assert the guard **refuses** any `approve` with an
 unbounded allowance.
 
+**Result (2026-11-20):**
+- `src/intent.ts` decodes any transaction's `{to, value, data}` into what it
+  does: native payment, token transfer, token approval, or unknown. Unknown
+  (including `transferFrom`, and value plus a call together) is refused.
+- `guard.checkIntent` judges the decoded intent. The mandate gains token
+  rules (EURC: 1 per payment, 5 total, 6 decimals) and `allowedSpenders`
+  (none). Decimals read from the chain must equal the mandate's, or nothing
+  is sent. USDC through its token contract counts against the same USDC
+  limits as native sends. Approvals: never unbounded (≥ 2^255), only to a
+  listed spender, never above one payment, and counted against the total.
+- `send.ts`: one `execute()` pipeline for every send; `--token` and
+  `--approve` on the command line. Token calls get an estimated gas limit
+  plus 20%. Key loading moved to `src/account.ts`.
+- `reconcile.ts` checks token lines by decoding the chain's calldata. Log
+  lines for token calls add `kind`, `asset`, `token`, `decimals`, `amount`;
+  native lines are unchanged.
+
+Live: 0.1 USDC through the token contract to self, nonce 6, `status=1`,
+42,694 gas, reconciled MATCHED from the decoded calldata. A billion EURC was
+refused (`exceeds per-payment limit 1`) and an unlimited approval was refused
+(`a standing permission to take everything`), both logged, neither signed.
+18 offline tests in `tests/intent.test.ts` plus 4 token cases in the
+reconciler; switching off the decoded-amount check fails the billion test.
+
 ---
 
-## Stage 6 · Simulate before send
+## Stage 6 · Simulate before send  ·  NEXT
 
 **Concept: `eth_estimateGas` and `eth_call` tell you whether a transaction
 would revert — before you spend anything.** Tenderly is a whole company built

@@ -10,13 +10,15 @@ Written in TypeScript. The last Python version is kept at the git tag
 
 ```
 src/        the code
-  arc.ts      talks to the Arc chain (RPC client)
-  guard.ts    the mandate: who may be paid, and how much
-  send.ts     the send loop; this is the file you run
+  arc.ts        talks to the Arc chain (RPC client)
+  account.ts    loads the throwaway testnet key
+  guard.ts      the mandate: who may be paid, how much, which tokens
+  intent.ts     decodes what a transaction actually does
+  send.ts       the send loop; this is the file you run
   reconcile.ts  checks the evidence log against the chain
   contracts.ts  the Arc contracts a user needs: address + ABI
   read.ts       reads any of them with eth_call (no gas, no signing)
-tests/      offline tests: guard, refusals, reconciliation, contract reads
+tests/      offline tests: guard, intents, refusals, reconciliation, reads
 docs/       PLAN.md (the staged build plan) and notes/
 evidence/   sends.jsonl, one line per send, never rewritten
 scratch/    early experiments, not used by the code
@@ -30,15 +32,19 @@ step.
 ```
 npm install         # first time only
 
-npm test            # 41 tests, no network
+npm test            # all offline tests, no network
 npm run typecheck   # checks the types; writes nothing
 npm run send        # sends 0.1 USDC to your own wallet
 
-npm run send -- --to 0x… --amount 0.25   # choose recipient and amount
+npm run send -- --to 0x… --amount 0.25              # choose recipient and amount
+npm run send -- --token EURC --amount 0.5           # a token transfer
+npm run send -- --token EURC --approve 0x… --amount 0.5   # a token approval
 ```
 
-The guard still decides. A recipient or amount outside the mandate in
-`send.ts` is refused and logged, never signed.
+The guard still decides, on what the transaction actually does: a token
+transfer's `value` is 0, so its recipient and amount are decoded from the
+calldata. Anything outside the mandate in `send.ts` is refused and logged,
+never signed. Unlimited approvals are always refused.
 
 ```
 npm run reconcile   # every log line vs the chain; exit code 1 if they disagree
@@ -56,11 +62,10 @@ npm run balances -- --address 0x…    # for any address
 Decimals are read from each token, never assumed. An address with no
 contract is refused, never shown as a zero balance.
 
-`send.ts` reads a throwaway testnet private key from `.testnet_key` in the
+`account.ts` reads a throwaway testnet private key from `.testnet_key` in the
 repo root. That file is gitignored. Never put a key holding real funds there.
 
 ## Progress
 
-See [docs/PLAN.md](docs/PLAN.md). Stages 1–4 are done: send and verify,
-refusals recorded and never sent, reconciliation of the log against the
-chain, and reading any contract.
+See [docs/PLAN.md](docs/PLAN.md) for what each stage built and how it was
+tested.

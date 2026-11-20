@@ -20,22 +20,42 @@ import { join, relative } from "node:path";
 import { parseArgs } from "node:util";
 
 import * as arc from "./arc.ts";
-import { fromWei, normalise, toWei } from "./guard.ts";
+import { fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
+import { decodeIntent } from "./intent.ts";
 
 const ROOT = join(import.meta.dirname, "..");
 const LOG_FILE = join(ROOT, "evidence", "sends.jsonl");
 
-/** One line of evidence/sends.jsonl, as send.ts writes it. */
+/**
+ * One line of evidence/sends.jsonl, as send.ts writes it.
+ *
+ * Native payments carry amount_usdc. Token calls (from Stage 5) carry kind,
+ * asset, token, decimals and amount instead; `to` is the real recipient (or
+ * the spender, for an approval), not the token contract. A line with no
+ * `kind` is a native payment.
+ */
 export type LogRecord = {
   ts: number;
   from: string;
   to: string;
-  amount_usdc: string;
   broadcast: boolean;
+  amount_usdc?: string;
+  kind?: "native" | "transfer" | "approve" | "unknown";
+  asset?: string;
+  token?: string;
+  decimals?: number;
+  amount?: string;
   nonce?: number;
   tx_hash?: string;
   refused_because?: string;
 };
+
+/** The amount and asset a line claims, for display. */
+export function claimed(r: LogRecord): { amount: string; asset: string } {
+  return (r.kind ?? "native") === "native"
+    ? { amount: r.amount_usdc ?? "?", asset: "USDC" }
+    : { amount: r.amount ?? "?", asset: r.asset ?? "?" };
+}
 
 /** A log record plus its line number, so a report can point at the line. */
 export type Entry = { line: number; record: LogRecord };
@@ -101,21 +121,59 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
     problems.push(`from: log ${logFrom ?? r.from}, chain ${chainFrom ?? tx.from}`);
   }
 
-  const logTo = normalise(r.to);
-  const chainTo = normalise(tx.to);
-  if (logTo !== chainTo) {
-    problems.push(`to: log ${logTo ?? r.to}, chain ${chainTo ?? "(none)"}`);
-  }
+  const kind = r.kind ?? "native";
 
-  const chainValue = BigInt(tx.value);
-  let logValue: bigint | null = null;
-  try {
-    logValue = toWei(r.amount_usdc);
-  } catch {
-    // An unreadable amount is reported below, never guessed at.
-  }
-  if (logValue !== chainValue) {
-    problems.push(`amount: log ${r.amount_usdc} USDC, chain ${fromWei(chainValue)} USDC`);
+  if (kind === "native") {
+    const logTo = normalise(r.to);
+    const chainTo = normalise(tx.to);
+    if (logTo !== chainTo) {
+      problems.push(`to: log ${logTo ?? r.to}, chain ${chainTo ?? "(none)"}`);
+    }
+
+    const chainValue = BigInt(tx.value);
+    let logValue: bigint | null = null;
+    try {
+      logValue = toWei(r.amount_usdc ?? "");
+    } catch {
+      // An unreadable amount is reported below, never guessed at.
+    }
+    if (logValue !== chainValue) {
+      problems.push(`amount: log ${r.amount_usdc} USDC, chain ${fromWei(chainValue)} USDC`);
+    }
+    if (tx.input !== undefined && tx.input !== "0x") {
+      problems.push("call: log says a plain payment, chain shows a contract call");
+    }
+  } else if (tx.to === null) {
+    problems.push("call: chain shows a contract creation, not a token call");
+  } else {
+    // A token call: the chain's `to` is the TOKEN, and the real recipient and
+    // amount are inside the calldata. Decode it, exactly as the guard did.
+    if (normalise(r.token) !== normalise(tx.to)) {
+      problems.push(`token: log ${normalise(r.token) ?? r.token}, chain ${normalise(tx.to)}`);
+    }
+    const onChain = decodeIntent({
+      to: tx.to as `0x${string}`,
+      value: BigInt(tx.value),
+      data: tx.input as `0x${string}`,
+    });
+    if (onChain.kind !== kind) {
+      problems.push(`call: log ${kind}, chain ${onChain.kind}`);
+    } else if (onChain.kind === "transfer" || onChain.kind === "approve") {
+      const counterparty = onChain.kind === "transfer" ? onChain.to : onChain.spender;
+      if (normalise(r.to) !== normalise(counterparty)) {
+        problems.push(`to: log ${normalise(r.to) ?? r.to}, chain ${normalise(counterparty)}`);
+      }
+      let logUnits: bigint | null = null;
+      try {
+        logUnits = toUnits(r.amount ?? "", r.decimals ?? -1);
+      } catch {
+        // Unreadable amount or decimals: reported below, never guessed at.
+      }
+      if (logUnits !== onChain.amount) {
+        const chainAmount = r.decimals === undefined ? `${onChain.amount} base units` : fromUnits(onChain.amount, r.decimals);
+        problems.push(`amount: log ${r.amount} ${r.asset}, chain ${chainAmount} ${r.asset}`);
+      }
+    }
   }
 
   const chainNonce = Number(BigInt(tx.nonce));
@@ -192,17 +250,19 @@ const short = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)
 
 export function formatReport(report: Report): string {
   const out: string[] = [];
-  out.push("line  nonce  status      amount     to            detail");
+  out.push("line  nonce  status      kind      amount          to            detail");
 
   for (const { entry, status, problems, block } of report.rows) {
     const r = entry.record;
     const nonce = r.nonce === undefined ? "-" : String(r.nonce);
+    const { amount, asset } = claimed(r);
+    const shown = amount.length > 10 ? `${amount.slice(0, 9)}…` : amount;
     let detail = "";
     if (status === "REFUSED") detail = `never broadcast: ${r.refused_because ?? "no reason logged"}`;
     else if (block !== null) detail = `block ${block}`;
     out.push(
       `${String(entry.line).padEnd(5)} ${nonce.padEnd(6)} ${status.padEnd(11)} ` +
-        `${r.amount_usdc.padEnd(10)} ${short(r.to).padEnd(13)} ${detail}`,
+        `${(r.kind ?? "native").padEnd(9)} ${`${shown} ${asset}`.padEnd(15)} ${short(r.to).padEnd(13)} ${detail}`,
     );
     for (const p of problems) {
       out.push(`${" ".repeat(25)}↳ ${p}`);

@@ -9,14 +9,21 @@
 import { describe, expect, test } from "vitest";
 
 import type { ChainTx, Receipt } from "../src/arc.ts";
-import { toWei } from "../src/guard.ts";
+import { toUnits, toWei } from "../src/guard.ts";
+import { encodeTransfer } from "../src/intent.ts";
 import { type Chain, type Entry, reconcile } from "../src/reconcile.ts";
 
 const ME = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
 const BOB = "0x2222222222222222222222222222222222222222";
 const hash = (n: number) => "0x" + n.toString(16).padStart(64, "0");
 
-type OnChain = { nonce: number; to?: string; amount?: string; status?: "0x1" | "0x0" | null };
+type OnChain = {
+  nonce: number;
+  to?: string;
+  amount?: string;
+  status?: "0x1" | "0x0" | null;
+  call?: { token: string; data: `0x${string}` };   // a token call instead of a plain payment
+};
 
 /** A chain that knows exactly these transactions, and records what it is asked. */
 function fakeChain(onChain: OnChain[], chainNonce = onChain.length) {
@@ -28,10 +35,11 @@ function fakeChain(onChain: OnChain[], chainNonce = onChain.length) {
       tx: {
         hash: hash(t.nonce),
         from: ME,
-        to: t.to ?? ME,
-        value: "0x" + toWei(t.amount ?? "0.1").toString(16),
+        to: t.call ? t.call.token : (t.to ?? ME),
+        value: t.call ? "0x0" : "0x" + toWei(t.amount ?? "0.1").toString(16),
         nonce: "0x" + t.nonce.toString(16),
         blockNumber: "0x10",
+        input: t.call ? t.call.data : "0x",
       },
       receipt: status === null ? null : { status, gasUsed: "0x5208", blockNumber: "0x10" },
     });
@@ -153,5 +161,51 @@ describe("other disagreements", () => {
     expect(statuses(report.rows)).toEqual(["MATCHED", "REFUSED"]);
     expect(asked).toEqual([hash(0)]);
     expect(report.ok).toBe(true);
+  });
+});
+
+// --- Stage 5: token lines are checked against the decoded calldata ----------
+
+describe("token transfers", () => {
+  const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+
+  /** A token-transfer log line, as send.ts writes it from Stage 5 on. */
+  function tokenSent(line: number, nonce: number, amount: string, to = ME): Entry {
+    return {
+      line,
+      record: {
+        ts: 0, from: ME, to, kind: "transfer", asset: "EURC", token: EURC, decimals: 6,
+        amount, nonce, tx_hash: hash(nonce), broadcast: true,
+      },
+    };
+  }
+  const onChainTransfer = (nonce: number, amount: string, to = ME): OnChain => ({
+    nonce,
+    call: { token: EURC, data: encodeTransfer(to as `0x${string}`, toUnits(amount, 6)) },
+  });
+
+  test("a token line matches when the decoded recipient and amount agree", async () => {
+    const { chain } = fakeChain([onChainTransfer(0, "0.5")]);
+    const report = await reconcile([tokenSent(1, 0, "0.5")], chain);
+    expect(statuses(report.rows)).toEqual(["MATCHED"]);
+  });
+
+  test("a token amount is compared from the calldata, since the value field is 0", async () => {
+    const { chain } = fakeChain([onChainTransfer(0, "0.5")]);
+    const report = await reconcile([tokenSent(1, 0, "0.7")], chain);
+    expect(report.rows[0]?.status).toBe("DIVERGENT");
+    expect(report.rows[0]?.problems).toEqual(["amount: log 0.7 EURC, chain 0.5 EURC"]);
+  });
+
+  test("the real token recipient is in the calldata, not the tx's `to`", async () => {
+    const { chain } = fakeChain([onChainTransfer(0, "0.5", BOB)]);
+    const report = await reconcile([tokenSent(1, 0, "0.5")], chain);
+    expect(report.rows[0]?.problems[0]).toContain(`chain ${BOB.toLowerCase()}`);
+  });
+
+  test("a line that says plain payment but was a contract call is DIVERGENT", async () => {
+    const { chain } = fakeChain([onChainTransfer(0, "0.1")]);
+    const report = await reconcile([sent(1, 0)], chain);
+    expect(report.rows[0]?.status).toBe("DIVERGENT");
   });
 });
