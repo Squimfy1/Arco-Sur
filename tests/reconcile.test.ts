@@ -9,8 +9,11 @@
 import { describe, expect, test } from "vitest";
 
 import type { ChainTx, Receipt } from "../src/arc.ts";
+import { encodeAbiParameters, pad } from "viem";
+
+import { TRANSFER_TOPIC } from "../src/events.ts";
 import { toUnits, toWei } from "../src/guard.ts";
-import { encodeTransfer } from "../src/intent.ts";
+import { decodeIntent, encodeTransfer } from "../src/intent.ts";
 import { type Chain, type Entry, reconcile } from "../src/reconcile.ts";
 
 const ME = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
@@ -23,7 +26,19 @@ type OnChain = {
   amount?: string;
   status?: "0x1" | "0x0" | null;
   call?: { token: string; data: `0x${string}` };   // a token call instead of a plain payment
+  logs?: Receipt["logs"];   // override the events; by default a token call emits the matching one
 };
+
+/** The Transfer event a real token emits for this transfer calldata. */
+function transferEvent(token: string, data: `0x${string}`): NonNullable<Receipt["logs"]>[number] {
+  const intent = decodeIntent({ to: token as `0x${string}`, value: 0n, data });
+  if (intent.kind !== "transfer") throw new Error("fake chain only emits events for transfers");
+  return {
+    address: token,
+    topics: [TRANSFER_TOPIC, pad(ME), pad(intent.to as `0x${string}`)],
+    data: encodeAbiParameters([{ type: "uint256" }], [intent.amount]),
+  };
+}
 
 /** A chain that knows exactly these transactions, and records what it is asked. */
 function fakeChain(onChain: OnChain[], chainNonce = onChain.length) {
@@ -31,6 +46,7 @@ function fakeChain(onChain: OnChain[], chainNonce = onChain.length) {
   const txs = new Map<string, { tx: ChainTx; receipt: Receipt | null }>();
   for (const t of onChain) {
     const status = t.status === undefined ? "0x1" : t.status;
+    const logs = t.logs ?? (t.call ? [transferEvent(t.call.token, t.call.data)] : []);
     txs.set(hash(t.nonce), {
       tx: {
         hash: hash(t.nonce),
@@ -41,7 +57,7 @@ function fakeChain(onChain: OnChain[], chainNonce = onChain.length) {
         blockNumber: "0x10",
         input: t.call ? t.call.data : "0x",
       },
-      receipt: status === null ? null : { status, gasUsed: "0x5208", blockNumber: "0x10" },
+      receipt: status === null ? null : { status, gasUsed: "0x5208", blockNumber: "0x10", logs },
     });
   }
   const chain: Chain = {
@@ -201,6 +217,13 @@ describe("token transfers", () => {
     const { chain } = fakeChain([onChainTransfer(0, "0.5", BOB)]);
     const report = await reconcile([tokenSent(1, 0, "0.5")], chain);
     expect(report.rows[0]?.problems[0]).toContain(`chain ${BOB.toLowerCase()}`);
+  });
+
+  test("Stage 7: status 1 without the token's Transfer event is not proof: DIVERGENT", async () => {
+    const { chain } = fakeChain([{ ...onChainTransfer(0, "0.5"), logs: [] }]);
+    const report = await reconcile([tokenSent(1, 0, "0.5")], chain);
+    expect(report.rows[0]?.status).toBe("DIVERGENT");
+    expect(report.rows[0]?.problems[0]).toContain("events: no Transfer event from the token");
   });
 
   test("a line that says plain payment but was a contract call is DIVERGENT", async () => {

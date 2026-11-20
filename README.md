@@ -15,6 +15,7 @@ src/        the code
   guard.ts      the mandate: who may be paid, how much, which tokens
   intent.ts     decodes what a transaction actually does
   simulate.ts   rehearses a transaction on the node before signing
+  events.ts     proves from the receipt what a token call actually did
   send.ts       the send loop; this is the file you run
   reconcile.ts  checks the evidence log against the chain
   contracts.ts  the Arc contracts a user needs: address + ABI

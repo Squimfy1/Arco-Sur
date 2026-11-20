@@ -4,8 +4,9 @@
 mandate), `src/send.ts` (the five-stage loop), `src/reconcile.ts` (log vs
 chain), `src/contracts.ts` + `src/read.ts` (read any contract),
 `src/intent.ts` (decode what a transaction does), `src/simulate.ts` (rehearse
-before signing), `src/account.ts` (the key),
-and offline tests across `tests/`. Stages 1–6 are done; 1–3 alone are a
+before signing), `src/events.ts` (proof from receipts), `src/account.ts` (the
+key),
+and offline tests across `tests/`. Stages 1–7 are done; 1–3 alone are a
 complete execution system. Ported from Python on
 2026-11-20; the Python version is the git tag `python-v1`. Chain ID 5042002.
 
@@ -241,7 +242,7 @@ first and change it, so simulation catches "cannot work", not "will work".
 
 ---
 
-## Stage 7 · Events and logs  ·  NEXT
+## Stage 7 · Events and logs  ·  DONE
 
 **Concept: contracts report what happened through logs, and a receipt's
 `logs` array is the only proof of what a call actually did.** `status=1` means
@@ -255,9 +256,26 @@ topics, the amount is in `data`.
 recipient and amount match your intent. This closes the gap between *the
 transaction succeeded* and *the money went where I meant*.
 
+**Result (2026-11-20):** `src/events.ts` decodes ERC-20 `Transfer` and
+`Approval` events by hand (tested equal to viem's decoder) and
+`proveEffect()` demands exactly one event, emitted by the token contract
+itself, with the expected sender, counterparty and amount. Lookalike events
+from another contract, NFT transfers (4 topics), wrong amounts, missing
+events and duplicates are all "not proof". `send.ts` prints the proof after
+every token call; `reconcile.ts` marks a token line DIVERGENT if its receipt
+lacks the proof, even with status 1.
+
+Checked live: a NATIVE USDC payment on Arc emits no event (empty `logs`),
+so this applies to token calls. Live: 0.1 USDC through the token contract,
+nonce 7, printed `proof: the token's Transfer event matches exactly`, and
+both token lines (nonces 6 and 7) reconcile MATCHED with event proof. 11
+offline tests in `tests/events.test.ts` (one uses the real nonce-6 log), plus
+one in the reconciler; dropping the "emitted by the token itself" check
+makes the forged-event test fail.
+
 ---
 
-## Stage 8 · Gas, fees, and the cost of being wrong
+## Stage 8 · Gas, fees, and the cost of being wrong  ·  NEXT
 
 **Concept: you pay for computation whether or not it succeeds.** A reverted
 transaction still costs gas.

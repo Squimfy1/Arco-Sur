@@ -99,6 +99,8 @@ export type Receipt = {
   gasUsed?: string;
   effectiveGasPrice?: string;
   blockNumber?: string;
+  /** Events the transaction emitted. events.ts decodes them. */
+  logs?: { address: string; topics: string[]; data: string }[];
 };
 
 /** null while pending. Once mined: status 1 = success, 0 = reverted. */

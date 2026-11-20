@@ -11,7 +11,9 @@
  *                           protocol's idempotency key.
  *     3. sign + broadcast
  *     4. receipt            poll until mined. status 1 = success, 0 = reverted.
- *     5. reconcile          compare what was intended against what happened.
+ *     5. reconcile          compare what was intended against what happened:
+ *                           the nonce moved by one, and for a token call the
+ *                           token's own event shows the right amount and party.
  *
  * Step 5 exists because step 3 can time out after the transaction already
  * landed. A retry that re-signs with a NEW nonce sends the money twice. A retry
@@ -37,6 +39,7 @@ import { loadAccount } from "./account.ts";
 import * as arc from "./arc.ts";
 import { CONTRACTS, EURC, type KnownContract, TOKENS } from "./contracts.ts";
 import * as guard from "./guard.ts";
+import { proveEffect } from "./events.ts";
 import { decodeIntent, encodeApprove, encodeTransfer, type TxRequest } from "./intent.ts";
 import { tokenInfo } from "./read.ts";
 import { simulate } from "./simulate.ts";
@@ -263,6 +266,23 @@ export async function execute(
       `reconcile: nonce ${n} -> ${after} ` +
         `(${after === n + 1 ? "consistent" : "UNEXPECTED"})`,
     );
+
+    // status 1 means "did not revert", not "the money went where I meant".
+    // For a token call, the token's own event is the proof.
+    if (intent.kind === "transfer" || intent.kind === "approve") {
+      const proof = proveEffect(r.logs ?? [], {
+        kind: intent.kind,
+        token: intent.token,
+        from: acct.address,
+        to: intent.kind === "transfer" ? intent.to : intent.spender,
+        amount: intent.amount,
+      });
+      console.log(
+        proof.proven
+          ? `proof: the token's ${intent.kind === "transfer" ? "Transfer" : "Approval"} event matches exactly`
+          : `proof: UNEXPECTED — ${proof.reason}`,
+      );
+    }
   }
 
   return txHash;

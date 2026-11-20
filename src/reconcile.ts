@@ -21,6 +21,7 @@ import { parseArgs } from "node:util";
 
 import * as arc from "./arc.ts";
 import { fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
+import { proveEffect } from "./events.ts";
 import { decodeIntent } from "./intent.ts";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -192,6 +193,21 @@ async function checkRow(entry: Entry, chain: Chain): Promise<Row> {
   const block = arc.toInt(rcpt.blockNumber);
   if (arc.toInt(rcpt.status) !== 1n) {
     return row("REVERTED", [], block);
+  }
+
+  // Stage 7: for a token call, status 1 is not enough. The token's own event
+  // must show this sender, this counterparty and this amount.
+  if ((kind === "transfer" || kind === "approve") && r.decimals !== undefined && r.amount !== undefined) {
+    const proof = proveEffect(rcpt.logs ?? [], {
+      kind,
+      token: r.token ?? "",
+      from: r.from,
+      to: r.to,
+      amount: toUnits(r.amount, r.decimals),
+    });
+    if (!proof.proven) {
+      return row("DIVERGENT", [`events: ${proof.reason}`], block);
+    }
   }
   return row("MATCHED", [], block);
 }
