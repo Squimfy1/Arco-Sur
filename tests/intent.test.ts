@@ -15,8 +15,8 @@ import {
   checkIntent,
   makeMandate,
   toUnits,
-} from "../src/guard.ts";
-import { decodeIntent, encodeApprove, encodeTransfer } from "../src/intent.ts";
+} from "../src/lib/server/guard.ts";
+import { decodeIntent, encodeApprove, encodeTransfer } from "../src/lib/server/intent.ts";
 
 const ME = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
 const STRANGER = "0x1111111111111111111111111111111111111111";

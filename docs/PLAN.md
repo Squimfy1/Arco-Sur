@@ -318,7 +318,7 @@ no history) and one in `send.test.ts`.
 
 ---
 
-## Stage 9 · The interface, read-only  ·  NEXT
+## Stage 9 · The interface, read-only  ·  DONE
 
 **Concept: the view renders, it never calculates.** Everything displayed comes
 from the log or the chain.
@@ -329,9 +329,49 @@ and the reconciliation result per row.
 **Test:** `view_check.mjs` — assert no arithmetic in the template, and that
 every number on screen traces to a value in the JSON.
 
+**Result (2026-11-20):**
+- Built with SvelteKit 3 (Svelte 5, Vite 8, adapter-node). `npm run app`
+  serves it on 127.0.0.1:5173 only. The backend moved to `src/lib/server/`,
+  which SvelteKit refuses to bundle for the browser: the key, the RPC and the
+  log stay on the server. The CLIs run from there unchanged.
+- `paths.ts` finds the repo root by its package.json, so the key and the log
+  are the same files whether the code runs from source or bundled.
+  `mandate.ts` holds the one mandate the CLI and the page both read.
+- `+page.server.ts` reads the chain and the log with the CLI's own code
+  (balances, `reconcile`, `alreadySent`) and hands the readings to
+  `view.ts`'s `buildView`, which decides every string on the page: amounts
+  (bigint, grouped), dates, statuses, mandate used/left and the bar's width,
+  the accounting statement. `+page.svelte` only places them.
+- Design: a Monitor surface (look first; the one Act, sending, comes in
+  Stage 10). Dense and left-aligned: header with wallet, network, block, read
+  time; a one-line verdict; Holdings and Mandate side by side; Activity, newest
+  first; the Accounting statement. IBM Plex Sans with Plex Mono for numbers and
+  addresses, oklch tokens with light and dark themes, status always a word as
+  well as a colour. The design pack's slop diagnostic, scored against the
+  page: 0 of 10 tells. No gradient; no blue/purple tech hue (warm paper, one
+  rust accent); no tile grid (tables); no accent rail; no blur; no monument
+  stat (the balance is a table row); no icon toppers; nothing centred; Plex,
+  not a default font; the surface is a monitor and reads as one.
+- Errors render as a page: no key file (503) or the node not answering (502),
+  with the server's own message, which never contains the key.
+
+Tests: `tests/view.test.ts`, 12 offline tests. `buildView` on fake readings
+(grouping, holdings check, mandate usage, ordering, refusals, unbounded
+amounts, the statement turning red). The template: no arithmetic or
+formatting in any `{…}` expression, and no imports but its own types. The
+page rendered for real with `svelte/server`: every number in its text is
+found in the view object. Each check has a control. Mutation check: putting
+`{Number(l.total) - Number(l.used)}` in the template failed the arithmetic
+test; appending a digit to a value failed the trace test.
+
+Live: the page shows nonces 0–8 Matched, 4 refusals with their reasons,
+39.9950290611 USDC, 0.9 of 5 USDC used, and unexplained 0, the same as
+`npm run reconcile` and `npm run balances`. It renders in about 1.2 s and
+fits a 390 px phone (the activity table scrolls inside its own box).
+
 ---
 
-## Stage 10 · Send from the interface
+## Stage 10 · Send from the interface  ·  NEXT
 
 **Concept: the UI calls the same guard.** No second code path, no duplicated
 rules.

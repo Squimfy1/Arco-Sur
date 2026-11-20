@@ -3,3 +3,7 @@
 
 # Installed packages. Rebuild them with: npm install
 node_modules/
+
+# SvelteKit's generated types and the production build. Rebuilt on demand.
+.svelte-kit/
+build/

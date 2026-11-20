@@ -15,7 +15,7 @@ import {
   makeMandate,
   normalise,
   toWei,
-} from "../src/guard.ts";
+} from "../src/lib/server/guard.ts";
 
 const ALICE = "0x1111111111111111111111111111111111111111";
 const BOB = "0x2222222222222222222222222222222222222222";

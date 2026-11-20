@@ -8,13 +8,13 @@
 
 import { describe, expect, test } from "vitest";
 
-import type { ChainTx, Receipt } from "../src/arc.ts";
+import type { ChainTx, Receipt } from "../src/lib/server/arc.ts";
 import { encodeAbiParameters, pad } from "viem";
 
-import { TRANSFER_TOPIC } from "../src/events.ts";
-import { ARC_USDC_TOKEN, toUnits, toWei } from "../src/guard.ts";
-import { decodeIntent, encodeTransfer } from "../src/intent.ts";
-import { type Chain, type Entry, type OutcomeEntry, formatReport, reconcile } from "../src/reconcile.ts";
+import { TRANSFER_TOPIC } from "../src/lib/server/events.ts";
+import { ARC_USDC_TOKEN, toUnits, toWei } from "../src/lib/server/guard.ts";
+import { decodeIntent, encodeTransfer } from "../src/lib/server/intent.ts";
+import { type Chain, type Entry, type OutcomeEntry, formatReport, reconcile } from "../src/lib/server/reconcile.ts";
 
 const ME = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
 const BOB = "0x2222222222222222222222222222222222222222";

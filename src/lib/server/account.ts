@@ -11,25 +11,43 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 
-// Code lives in src/; the key lives at the repo root.
-const KEY_FILE = join(import.meta.dirname, "..", ".testnet_key");
+import { KEY_FILE } from "./paths.ts";
 
-export function loadAccount(): PrivateKeyAccount {
-  if (!existsSync(KEY_FILE)) {
-    console.error(
-      `No key at ${KEY_FILE}.\n` +
-        "Create a THROWAWAY testnet wallet and put its private key there.\n" +
+/** No key file. Raised, not exited on, so the web app can show it as a page. */
+export class NoKeyError extends Error {
+  name = "NoKeyError";
+  constructor() {
+    super(
+      `No key at ${KEY_FILE}. ` +
+        "Create a THROWAWAY testnet wallet and put its private key there. " +
         "Never use a key that holds real funds.",
     );
-    process.exit(1);
+  }
+}
+
+/** The wallet, or NoKeyError. */
+export function readAccount(): PrivateKeyAccount {
+  if (!existsSync(KEY_FILE)) {
+    throw new NoKeyError();
   }
   let key = readFileSync(KEY_FILE, "utf8").trim();
   if (!key.startsWith("0x")) {
     key = "0x" + key;
   }
   return privateKeyToAccount(key as `0x${string}`);
+}
+
+/** For the CLI: the wallet, or a clear message and exit code 1. */
+export function loadAccount(): PrivateKeyAccount {
+  try {
+    return readAccount();
+  } catch (e) {
+    if (e instanceof NoKeyError) {
+      console.error(e.message);
+      process.exit(1);
+    }
+    throw e;
+  }
 }

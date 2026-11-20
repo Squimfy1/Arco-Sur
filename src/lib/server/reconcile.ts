@@ -22,16 +22,15 @@
  */
 
 import { readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { relative } from "node:path";
 import { parseArgs } from "node:util";
 
 import * as arc from "./arc.ts";
 import { proveEffect } from "./events.ts";
 import { ARC_USDC_TOKEN, fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
 import { decodeIntent } from "./intent.ts";
+import { LOG_FILE } from "./paths.ts";
 
-const ROOT = join(import.meta.dirname, "..");
-const LOG_FILE = join(ROOT, "evidence", "sends.jsonl");
 
 /**
  * One send line of evidence/sends.jsonl, as send.ts writes it.

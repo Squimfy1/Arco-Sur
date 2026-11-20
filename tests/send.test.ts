@@ -15,8 +15,8 @@ import { join } from "node:path";
 import { privateKeyToAccount } from "viem/accounts";
 import { beforeEach, expect, test, vi } from "vitest";
 
-vi.mock("../src/arc.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/arc.ts")>()),
+vi.mock("../src/lib/server/arc.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/lib/server/arc.ts")>()),
   ask: vi.fn(),
   nonce: vi.fn(),
   gasPrice: vi.fn(),
@@ -26,9 +26,9 @@ vi.mock("../src/arc.ts", async (importOriginal) => ({
   estimateGas: vi.fn(),
 }));
 
-import * as arc from "../src/arc.ts";
-import { makeMandate } from "../src/guard.ts";
-import { send } from "../src/send.ts";
+import * as arc from "../src/lib/server/arc.ts";
+import { makeMandate } from "../src/lib/server/guard.ts";
+import { send } from "../src/lib/server/send.ts";
 
 // Private key 1: a famous test key that no one uses for real money.
 const account = privateKeyToAccount(

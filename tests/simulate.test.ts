@@ -7,9 +7,9 @@
 
 import { describe, expect, test, vi } from "vitest";
 
-import { RpcError } from "../src/arc.ts";
-import { encodeTransfer } from "../src/intent.ts";
-import { type Simulator, simulate } from "../src/simulate.ts";
+import { RpcError } from "../src/lib/server/arc.ts";
+import { encodeTransfer } from "../src/lib/server/intent.ts";
+import { type Simulator, simulate } from "../src/lib/server/simulate.ts";
 
 const ME = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
 const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";

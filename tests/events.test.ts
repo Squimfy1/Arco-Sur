@@ -8,7 +8,7 @@
 import { decodeEventLog, encodeAbiParameters, erc20Abi, pad } from "viem";
 import { describe, expect, test } from "vitest";
 
-import { APPROVAL_TOPIC, type Log, TRANSFER_TOPIC, decodeTokenEvents, proveEffect } from "../src/events.ts";
+import { APPROVAL_TOPIC, type Log, TRANSFER_TOPIC, decodeTokenEvents, proveEffect } from "../src/lib/server/events.ts";
 
 const USDC = "0x3600000000000000000000000000000000000000";
 const ME = "0xcbeb3dcd3a96843b0324a983658bd31393466486";

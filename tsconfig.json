@@ -1,20 +1,15 @@
 {
-  // Node runs the .ts files directly by stripping the types, so tsc only
-  // checks them and never writes JavaScript.
+  // SvelteKit writes the base ($app/tsconfig) on `svelte-kit sync`: module
+  // settings, $lib paths and the route types. Nothing here is compiled to
+  // JavaScript: Node and Vite strip the types, tsc and svelte-check only
+  // check them.
+  "extends": "$app/tsconfig",
   "compilerOptions": {
-    "target": "esnext",
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "types": ["node"],
-
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
+    "types": ["$app/types", "node"],
     "erasableSyntaxOnly": true,
-    "verbatimModuleSyntax": true,
-
     "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "skipLibCheck": true
+    "noUncheckedIndexedAccess": true
   },
-  "include": ["src", "tests"]
+  "include": ["src", "tests", "*"],
+  "exclude": ["src/service-worker"]
 }

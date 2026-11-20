@@ -28,7 +28,7 @@
  */
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 
@@ -37,15 +37,16 @@ import type { PrivateKeyAccount } from "viem/accounts";
 
 import { loadAccount } from "./account.ts";
 import * as arc from "./arc.ts";
-import { CONTRACTS, EURC, type KnownContract, TOKENS } from "./contracts.ts";
+import { CONTRACTS, type KnownContract, TOKENS } from "./contracts.ts";
 import * as guard from "./guard.ts";
 import { proveEffect } from "./events.ts";
 import { decodeIntent, encodeApprove, encodeTransfer, type TxRequest } from "./intent.ts";
+import { walletMandate } from "./mandate.ts";
+import { LOG_FILE } from "./paths.ts";
 import { tokenInfo } from "./read.ts";
 import { simulate } from "./simulate.ts";
 
 // Code lives in src/; the evidence lives at the repo root.
-const LOG_FILE = join(import.meta.dirname, "..", "evidence", "sends.jsonl");
 
 export { loadAccount };
 
@@ -353,7 +354,7 @@ export async function approveToken(
   return execute(mandate, { to: token.address, value: 0n, data: encodeApprove(spender as `0x${string}`, units) }, options);
 }
 
-// Runs only when this file is started directly (node src/send.ts),
+// Runs only when this file is started directly (npm run send),
 // never when another file imports it.
 //
 //   npm run send                                         0.1 USDC to yourself
@@ -378,16 +379,8 @@ if (import.meta.main) {
   console.log(`address: ${me}`);
   console.log(`balance: ${guard.fromWei(await arc.balanceWei(me))} USDC`);
 
-  // Mandate: this account may pay ITSELF, up to 1 USDC (5 total) and up to
-  // 1 EURC (5 total). It may approve no one.
-  const mandate = guard.makeMandate({
-    allowedRecipients: [me],
-    maxAmountUsdc: "1",
-    maxTotalUsdc: "5",
-    chainId: arc.CHAIN_ID,
-    tokens: [{ address: EURC.address, symbol: "EURC", decimals: 6, maxAmount: "1", maxTotal: "5" }],
-    allowedSpenders: [],
-  });
+  // The mandate lives in mandate.ts, shared with the web page.
+  const mandate = walletMandate(me);
 
   const token = args.token === undefined
     ? undefined

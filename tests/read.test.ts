@@ -8,9 +8,9 @@
 import { encodeFunctionData, encodeFunctionResult, erc20Abi, type Hex, toFunctionSelector } from "viem";
 import { describe, expect, test } from "vitest";
 
-import { RpcError } from "../src/arc.ts";
-import { CONTRACTS, EURC, PERMIT2, USDC } from "../src/contracts.ts";
-import { normalise } from "../src/guard.ts";
+import { RpcError } from "../src/lib/server/arc.ts";
+import { CONTRACTS, EURC, PERMIT2, USDC } from "../src/lib/server/contracts.ts";
+import { normalise } from "../src/lib/server/guard.ts";
 import {
   BALANCE_OF_SELECTOR,
   ContractReadError,
@@ -19,7 +19,7 @@ import {
   readContract,
   tokenBalance,
   tokenInfo,
-} from "../src/read.ts";
+} from "../src/lib/server/read.ts";
 
 const HOLDER = "0xCbEB3dcd3A96843b0324a983658bD31393466486";
 
