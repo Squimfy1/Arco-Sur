@@ -1,7 +1,6 @@
 <script lang="ts">
   // Rules: what this wallet may do (the mandate), how much of it is used,
   // and the accounting that proves every USDC of change is explained.
-  import GlassFolder from "#lib/ui/GlassFolder.svelte";
   import Pill from "#lib/ui/Pill.svelte";
 
   import type { PageProps } from "./$types";
@@ -10,131 +9,130 @@
 </script>
 
 <svelte:head>
-  <title>Cathedral · Rules</title>
+  <title>Arco-Sur · Rules</title>
 </svelte:head>
 
-<header class="page-head">
-  <p class="label">Wallet / rules / checked before every signature</p>
-  <h1 class="display">The <em>rules</em>, and the books</h1>
-</header>
+<h1>Rules</h1>
+<p class="muted lede">The limits every send is checked against before signing, and the books that check the result.</p>
 
-<section class="block">
-  <h2 class="heading">Spending limits</h2>
-  <div class="folders">
-    {#each data.mandate.limits as l (l.asset)}
-      <div class="limit">
-        <GlassFolder label={l.asset} />
-        <div class="limit-text">
-          <span class="limit-name">{l.asset}</span>
-          <span class="muted"><span class="num money">{l.used}</span> used of <span class="num money">{l.total}</span></span>
-        </div>
-        <div class="progress" role="img" aria-label="{l.usedPercent}% of the {l.asset} total used">
-          <span style:width="{l.usedPercent}%"></span>
-        </div>
-        <span class="label"><span class="money">{l.left}</span> left / at most <span class="money">{l.perPayment}</span> per payment</span>
+<section class="card">
+  <h2 class="card-title">Spending limits</h2>
+  {#each data.mandate.limits as l (l.asset)}
+    <div class="limit">
+      <div class="limit-head">
+        <span class="asset">{l.asset}</span>
+        <span><span class="num money">{l.used}</span> used of <span class="num money">{l.total}</span></span>
       </div>
-    {/each}
-  </div>
+      <div class="bar" role="img" aria-label="{l.usedPercent}% of the {l.asset} total used">
+        <span style:width="{l.usedPercent}%"></span>
+      </div>
+      <p class="muted small">
+        <span class="num money">{l.left}</span> left · at most <span class="num money">{l.perPayment}</span> per payment
+      </p>
+    </div>
+  {/each}
 </section>
 
-<section class="block">
-  <h2 class="heading">Who</h2>
-  <dl class="card">
-    <dt class="label">May be paid</dt>
+<section class="card">
+  <h2 class="card-title">Who</h2>
+  <dl>
+    <dt>May be paid</dt>
     <dd>
       {#each data.mandate.recipients as r (r.address)}
-        <span class="addr"><span class="num">{r.address}</span>{#if r.label}<span class="faint tag">{r.label}</span>{/if}</span>
+        <span class="addr"><span class="num">{r.address}</span>{#if r.label}<span class="muted tag">· {r.label}</span>{/if}</span>
       {/each}
     </dd>
-    <dt class="label">May be approved to spend</dt>
+    <dt>May be approved to spend</dt>
     <dd>{data.mandate.spenders}</dd>
   </dl>
 </section>
 
 {#each data.senders as s (s.address)}
-  <section class="block">
+  <section class="card">
     <div class="head">
-      <h2 class="heading">The books</h2>
+      <h2 class="card-title">Accounting</h2>
       {#if s.accounting}<Pill tone={s.accounting.tone} label={s.accounting.tone === "ok" ? "Balanced" : "Unexplained change"} />{/if}
     </div>
-    <p class="label addr-line">{s.label}</p>
+    <p class="muted small num">{s.label}</p>
     {#if s.accounting}
       {@const a = s.accounting}
-      <div class="books">
-        <div class="plates">
-          <div class="plate"><span>Start, block {a.startBlock}</span><span class="money">{a.start}</span></div>
-          <div class="plate"><span>Fees paid</span><span class="money">− {a.fees}</span></div>
-          <div class="plate"><span>Sent to others</span><span class="money">− {a.outflow}</span></div>
-          <div class="plate"><span>Expected now</span><span class="money">{a.expected}</span></div>
-          <div class="plate"><span>Actually now</span><span class="money">{a.now}</span></div>
-          <div class="plate"><span>Unexplained →</span><span class="money">{a.unexplained}</span></div>
-        </div>
-        <div class="key-idea" data-tone={a.tone}>
-          <span class="label">+ Verdict</span>
-          <span class="verdict">{a.verdict}</span>
-          <span class="muted small">
-            Nonce on chain <span class="num">{s.chainNonce}</span> / gaps <span class="num">{s.gaps}</span>
-            {#if s.duplicates}/ duplicates <span class="num">{s.duplicates}</span>{/if}
-          </span>
-        </div>
-      </div>
+      <table>
+        <tbody>
+          <tr><th scope="row">Balance at block <span class="num">{a.startBlock}</span></th><td class="num money">{a.start}</td></tr>
+          <tr><th scope="row">Fees paid</th><td class="num money">− {a.fees}</td></tr>
+          <tr><th scope="row">Sent to others</th><td class="num money">− {a.outflow}</td></tr>
+          <tr class="sum"><th scope="row">Expected now</th><td class="num money">{a.expected}</td></tr>
+          <tr><th scope="row">Actually now</th><td class="num money">{a.now}</td></tr>
+          <tr class="sum" data-tone={a.tone}><th scope="row">Unexplained</th><td class="num money">{a.unexplained}</td></tr>
+        </tbody>
+      </table>
+      <p class="verdict" data-tone={a.tone}>{a.verdict}</p>
     {/if}
+    <p class="muted small">
+      Nonce on chain <span class="num">{s.chainNonce}</span> · gaps <span data-tone={s.gapsTone} class="gaps">{s.gaps}</span>
+      {#if s.duplicates}· duplicates <span class="num">{s.duplicates}</span>{/if}
+    </p>
   </section>
 {/each}
 
 <style>
-  .page-head {
-    padding-bottom: var(--space-6);
+  h1 {
+    margin: 0;
+    font-size: var(--step-3);
+    font-weight: 600;
   }
 
-  .page-head .label {
-    margin: 0 0 var(--space-3);
+  .lede {
+    margin: var(--space-1) 0 var(--space-5);
   }
 
-  .block + .block {
-    margin-top: var(--space-7);
+  section + section {
+    margin-top: var(--space-5);
   }
 
-  .block > .heading {
-    margin-bottom: var(--space-5);
+  .limit + .limit {
+    margin-top: var(--space-5);
   }
 
-  .folders {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-    gap: var(--space-4);
+  .limit-head {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: var(--space-2);
   }
 
-  .limit {
-    display: grid;
-    gap: var(--space-3);
-    justify-items: center;
-    padding: var(--space-6) var(--space-5) var(--space-5);
-    background: var(--void);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-xl);
+  .asset {
+    font-weight: 600;
   }
 
-  .limit .progress {
-    width: 100%;
+  .bar {
+    height: 0.5rem;
+    border-radius: var(--pill);
+    background: var(--panel-2);
+    overflow: hidden;
   }
 
-  .limit-text {
-    display: grid;
-    justify-items: center;
-    gap: 2px;
+  .bar span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--accent);
   }
 
-  .limit-name {
-    font-size: var(--step-1);
-    font-weight: 400;
+  .small {
+    margin: var(--space-2) 0 0;
+    font-size: var(--step--1);
+    overflow-wrap: anywhere;
   }
 
   dl {
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-3) var(--space-6);
+    gap: var(--space-2) var(--space-5);
     margin: 0;
+  }
+
+  dt {
+    color: var(--ink-3);
   }
 
   dd {
@@ -150,33 +148,44 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: var(--space-3);
   }
 
-  .addr-line {
-    margin: var(--space-2) 0 var(--space-5);
-    overflow-wrap: anywhere;
+  table {
+    width: 100%;
+    max-width: 30rem;
+    margin-top: var(--space-4);
+    border-collapse: collapse;
   }
 
-  .books {
-    display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-6);
-    align-items: start;
+  th {
+    text-align: left;
+    font-weight: 400;
+    color: var(--ink-2);
+    padding: var(--space-2) 0;
   }
 
-  .verdict {
-    font-size: var(--step-1);
+  td {
+    text-align: right;
+    padding: var(--space-2) 0;
+  }
+
+  .sum th,
+  .sum td {
+    border-top: 1px solid var(--rule-strong);
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .sum[data-tone] td {
     color: var(--tone);
   }
 
-  .small {
-    font-size: var(--step--1);
+  .verdict {
+    color: var(--tone);
+    font-weight: 500;
   }
 
-  @media (max-width: 52rem) {
-    .books {
-      grid-template-columns: minmax(0, 1fr);
-    }
+  .gaps {
+    color: var(--tone);
   }
 </style>

@@ -8,18 +8,15 @@
 </script>
 
 <svelte:head>
-  <title>Cathedral · Operations</title>
+  <title>Arco-Sur · Operations</title>
 </svelte:head>
 
-<header class="page-head">
-  <p class="label">Wallet / operations / {data.stats.operations} lines</p>
-  <h1 class="display">Every <em>operation</em>, checked against the chain</h1>
-  <p class="lede muted">{data.verdict.counts}.</p>
-</header>
+<h1>Operations</h1>
+<p class="muted lede">{data.verdict.counts}. Every send the wallet tried, checked against the chain.</p>
 
 {#each data.days as day (day.label)}
-  <section class="day">
-    <h2 class="label day-head">{day.label}</h2>
+  <section class="card day">
+    <h2 class="day-head">{day.label}</h2>
     <ul>
       {#each day.rows as op (op.line)}
         <Operation {op} />
@@ -31,42 +28,44 @@
 {/each}
 
 {#each data.orphans as o (o)}
-  <p class="key-idea orphan" data-tone="bad">{o}</p>
+  <p class="card orphan" data-tone="bad">{o}</p>
 {/each}
 
 <style>
-  .page-head {
-    padding-bottom: var(--space-6);
-  }
-
-  .page-head .label {
-    margin: 0 0 var(--space-3);
+  h1 {
+    margin: 0;
+    font-size: var(--step-3);
+    font-weight: 600;
   }
 
   .lede {
-    margin: var(--space-4) 0 0;
+    margin: var(--space-1) 0 var(--space-5);
+  }
+
+  .day {
+    padding: var(--space-4) var(--space-2);
   }
 
   .day + .day {
-    margin-top: var(--space-6);
+    margin-top: var(--space-4);
   }
 
   .day-head {
-    margin: 0 0 var(--space-3);
+    margin: 0 0 var(--space-2);
+    padding: 0 var(--space-4);
+    font-size: var(--step--1);
+    font-weight: 600;
+    color: var(--ink-3);
   }
 
   ul {
     list-style: none;
     margin: 0;
     padding: 0;
-    border: 1px solid var(--line);
-    border-radius: var(--radius-xl);
-    overflow: hidden;
-    background: var(--pane);
   }
 
   .orphan {
-    margin-top: var(--space-5);
+    margin-top: var(--space-4);
     color: var(--tone);
   }
 </style>

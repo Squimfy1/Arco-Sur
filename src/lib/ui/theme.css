@@ -1,95 +1,55 @@
 /*
- * CATHEDRAL: the wallet's look, in one place.
+ * Arco-Sur's look, in one place. Every colour, font, size and radius the app
+ * uses is a variable here; components use the variables, never raw values.
+ * To restyle the app, change this file. Nothing in the backend
+ * (src/lib/server) knows any of it exists.
  *
- * From the Cathedral Library UI system v0.3 (the "Cathedral Logos" canvas):
- * one near-black ground carrying film grain, elevation by tint and never by
- * shadow, ink in four grey steps, Geist with Geist Mono for display, square
- * inverted buttons, readout plates in a warm off-black, "+" registration
- * marks on the corners of things, and signal red as the only strong hue,
- * always with bloom. The stained-glass colours exist only for the mosaic
- * wall, lit where the pointer passes.
- *
- * Every colour, font and size the app uses is a variable here; components
- * use the variables, never raw values. Nothing in the backend knows any of
- * it exists.
+ * The look: a hardware-wallet companion app. Near-black panels, white text,
+ * one lavender accent for actions, and status colours that always travel
+ * with a word, so nothing depends on colour alone.
  */
 
 :root {
-  /* Ground and surfaces: elevation is tint. */
-  --void: #000000;
-  --bg: #0e0e0e;
-  --pane: #161616;
-  --raised: #1e1e1e;
-  --well: #232323;
-  --segment-on: #0f0f0f;
-  --row-hover: #0b0b0b;
-  --line: #262626;
-  --line-soft: #1a1a1a;
-  --bezel: #373739;
-  --badge: #474747;
-  --mark: #4a4a4a;
+  --bg: oklch(0.155 0.006 285);
+  --sidebar: oklch(0.13 0.006 285);
+  --panel: oklch(0.2 0.008 285);
+  --panel-2: oklch(0.235 0.009 285);
+  --hover: oklch(0.27 0.01 285);
+  --ink: oklch(0.97 0.004 285);
+  --ink-2: oklch(0.78 0.01 285);
+  --ink-3: oklch(0.63 0.012 285);
+  --rule: oklch(0.29 0.01 285);
+  --rule-strong: oklch(0.38 0.012 285);
 
-  /* Ink, by opacity step: 100 / 82 / 60 / 40. */
-  --ink: #ededed;
-  --ink-read: #c8c8c8;
-  --ink-2: #9a9a9a;
-  --ink-3: #6a6a6a;
-  --ink-bright: #ffffff;
-  --ink-on-light: #000000;
+  --accent: oklch(0.8 0.11 290);
+  --accent-ink: oklch(0.17 0.03 290);
+  --accent-soft: oklch(0.32 0.07 290);
+  --accent-glow: oklch(0.8 0.11 290 / 0.18);
 
-  /* The one strong hue. Appears as an edge, a dot or a 2 px line, with bloom. */
-  --signal: #f2232b;
-  --signal-bloom: 0 0 14px 3px rgb(242 35 43 / 0.55), 0 0 2px #f2232b;
-  --signal-glow: 0 0 10px rgb(242 35 43 / 0.7);
+  --ok: oklch(0.8 0.15 155);
+  --ok-bg: oklch(0.3 0.06 155);
+  --warn: oklch(0.85 0.13 85);
+  --warn-bg: oklch(0.32 0.06 85);
+  --bad: oklch(0.72 0.17 22);
+  --bad-bg: oklch(0.3 0.08 22);
+  --quiet: oklch(0.75 0.01 285);
+  --quiet-bg: oklch(0.28 0.008 285);
 
-  /* Readout plates: warm off-black, greige glyphs with a slight halation. */
-  --readout: #15120b;
-  --plate: #1e1a14;
-  --plate-ink: #a8a4a3;
-  --plate-halo: 0 0 6px rgb(168 164 163 / 0.4);
+  --usd: oklch(0.62 0.14 250);
+  --eur: oklch(0.62 0.13 200);
+  --other: oklch(0.5 0.02 285);
+  --badge-ink: oklch(0.99 0 0);
 
-  /* Status words. Each always travels with its word. */
-  --ok: #8fbf9a;
-  --warn: #e0a43a;
-  --bad: #f2232b;
-  --quiet: #9a9a9a;
+  --sans: "Inter", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
 
-  /* Stained glass and stone: the mosaic wall only. */
-  --glass-1: #f2232b;
-  --glass-2: #e0a43a;
-  --glass-3: #2f6fe0;
-  --glass-4: #3fae7a;
-  --glass-5: #9a63e8;
-  --glass-6: #f4efe2;
-  --stone: #3a3a3a;
-  --stone-light: #5a5a5a;
-  --stone-glass: #262626;
-  --stone-void: #111111;
-
-  /* Glass folder (Rules). */
-  --folder: #2b2b2b;
-  --folder-front: rgb(110 110 110 / 0.3);
-  --folder-edge: rgb(255 255 255 / 0.08);
-  --folder-shine: rgb(255 255 255 / 0.22);
-  --folder-label: rgb(255 255 255 / 0.32);
-  --paper-top: #ffffff;
-  --paper-bottom: #cfcfcf;
-  --shade: rgb(0 0 0 / 0.55);
-
-  /* Type. */
-  --sans: "Geist", system-ui, sans-serif;
-  --mono: "Geist Mono", ui-monospace, monospace;
-  --readout-face: "Share Tech Mono", ui-monospace, monospace;
-  --brand-face: "Space Grotesk", "Geist", sans-serif;
-
-  --step--2: 0.6875rem;   /* 11: mono labels, caps */
-  --step--1: 0.8125rem;   /* 13 */
-  --step-0: 0.9375rem;    /* 15: body */
-  --step-1: 1.0625rem;    /* 17: reading */
-  --step-2: 1.375rem;     /* 22 */
-  --step-3: 1.75rem;      /* 28: headings */
-  --step-4: 2.75rem;      /* 44: display */
-  --step-5: clamp(3.5rem, 8vw, 6.5rem); /* the balance */
+  --step--2: 0.75rem;
+  --step--1: 0.8125rem;
+  --step-0: 0.875rem;
+  --step-1: 1rem;
+  --step-2: 1.25rem;
+  --step-3: 1.75rem;
+  --step-4: 2.5rem;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -98,32 +58,18 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
-  --space-8: 4.5rem;
 
-  --radius-sm: 4px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --radius-xl: 16px;
+  --radius: 8px;
+  --radius-lg: 12px;
   --pill: 999px;
 
-  --header-height: 4rem;
-  --rail-width: 4.5rem;
-  --nav-width: 18.5rem;
-  --content-width: 72rem;
+  --sidebar-width: 15rem;
+  --topbar-height: 3.25rem;
+  --content-width: 60rem;
 
-  --chart-line: var(--ink);
-  --chart-fill-top: rgb(237 237 237 / 0.14);
-  --chart-fill-bottom: rgb(237 237 237 / 0);
-
-  --grain: url("./assets/grain.png");
-  --terrain: url("./assets/terrain.png");
-  --stack: url("./assets/stack.png");
-  --halftone-1: url("./assets/halftone-1.svg");
-  --halftone-2: url("./assets/halftone-2.svg");
-  --halftone-3: url("./assets/halftone-3.svg");
-  --halftone-4: url("./assets/halftone-4.svg");
-  --halftone-5: url("./assets/halftone-5.svg");
-  --halftone-6: url("./assets/halftone-6.svg");
+  --chart-line: var(--accent);
+  --chart-fill-top: oklch(0.8 0.11 290 / 0.28);
+  --chart-fill-bottom: oklch(0.8 0.11 290 / 0);
 
   color-scheme: dark;
 }
@@ -140,14 +86,11 @@ html {
 
 body {
   margin: 0;
-  background-color: var(--bg);
-  background-image: var(--grain);
-  background-size: 256px 256px;
+  background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-weight: 300;
   font-size: var(--step-0);
-  line-height: 1.55;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -158,23 +101,16 @@ a {
 
 button,
 input,
-select,
-textarea {
+select {
   font: inherit;
   color: inherit;
 }
 
 :focus-visible {
-  outline: 1px solid var(--ink);
-  outline-offset: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
-
-::selection {
-  background: var(--ink);
-  color: var(--ink-on-light);
-}
-
-/* ── type ──────────────────────────────────────────────────────────── */
 
 /* Numbers line up in columns and never shift as they change. */
 .num {
@@ -182,49 +118,32 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-/* Discreet mode: the eye button hides every amount. */
-:root[data-discreet] .money {
-  filter: blur(8px);
+/* Discreet mode: the eye button in the top bar hides every amount. */
+:root[data-discreet] .num.money {
+  filter: blur(7px);
   user-select: none;
 }
 
-/* Display: light monospace, grey, with one keyword in full ink. No bold. */
-.display {
-  margin: 0;
-  font-family: var(--mono);
-  font-weight: 300;
-  font-size: var(--step-4);
-  line-height: 1.08;
-  color: var(--ink-3);
+/* Status colours, keyed by the backend's meaning, decided only here. */
+[data-tone="ok"] { --tone: var(--ok); --tone-bg: var(--ok-bg); }
+[data-tone="warn"] { --tone: var(--warn); --tone-bg: var(--warn-bg); }
+[data-tone="bad"] { --tone: var(--bad); --tone-bg: var(--bad-bg); }
+[data-tone="quiet"] { --tone: var(--quiet); --tone-bg: var(--quiet-bg); }
+
+/* Shared building blocks. */
+.card {
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  padding: var(--space-5);
 }
 
-.display em {
-  font-style: normal;
-  color: var(--ink);
-}
-
-/* Label: mono caps, tracked. */
-.label {
-  font-family: var(--mono);
-  font-size: var(--step--2);
-  font-weight: 400;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
-
-.heading {
-  margin: 0;
-  font-size: var(--step-3);
-  font-weight: 400;
-  letter-spacing: -0.01em;
+.card-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--step-1);
+  font-weight: 600;
 }
 
 .muted {
-  color: var(--ink-2);
-}
-
-.faint {
   color: var(--ink-3);
 }
 
@@ -233,197 +152,40 @@ textarea {
   font-family: var(--sans);
 }
 
-/* ── surfaces ─────────────────────────────────────────────────────── */
-
-.card {
-  position: relative;
-  background: var(--pane);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-}
-
-.card.void {
-  background: var(--void);
-}
-
-.card.ground {
-  background: var(--bg);
-}
-
-/* Registration marks: a "+" in two top corners. */
-.reg::before,
-.reg::after {
-  content: "+";
-  position: absolute;
-  top: 6px;
-  font-family: var(--mono);
-  font-size: 1rem;
-  line-height: 1;
-  color: var(--mark);
-  pointer-events: none;
-}
-
-.reg::before {
-  left: 10px;
-}
-
-.reg::after {
-  right: 10px;
-}
-
-/* Readout plates: key on the left, value on the right. */
-.plates {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  padding: 10px;
-  background: var(--readout);
-  border-radius: var(--radius-sm);
-}
-
-.plate {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-  padding: 5px 12px;
-  background: var(--plate);
-  font-family: var(--readout-face);
-  font-size: 1.125rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--plate-ink);
-  text-shadow: var(--plate-halo);
-}
-
-/* A key idea: a hairline of signal on the left. */
-.key-idea {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-1) 0 var(--space-1) var(--space-5);
-  border-left: 1px solid var(--signal);
-}
-
-/* Generated images. */
-.terrain {
-  background: var(--void) var(--terrain) center 70% / cover no-repeat;
-}
-
-.stack {
-  background: var(--stack) center / contain no-repeat;
-}
-
-.halftone {
-  background-color: var(--line);
-  background-position: center;
-  background-size: 86%;
-  background-repeat: no-repeat;
-}
-
-.halftone[data-n="1"] { background-image: var(--halftone-1); }
-.halftone[data-n="2"] { background-image: var(--halftone-2); }
-.halftone[data-n="3"] { background-image: var(--halftone-3); }
-.halftone[data-n="4"] { background-image: var(--halftone-4); }
-.halftone[data-n="5"] { background-image: var(--halftone-5); }
-.halftone[data-n="6"] { background-image: var(--halftone-6); }
-
-/* Progress: 2 px of signal, with bloom. */
-.progress {
-  height: 2px;
-  background: var(--line);
-}
-
-.progress > span {
-  display: block;
-  height: 2px;
-  background: var(--signal);
-  box-shadow: var(--signal-glow);
-}
-
-/* ── controls ─────────────────────────────────────────────────────── */
-
-/* The call to action: an inverted block, no radius. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: 2.75rem;
-  padding: 0 1.125rem;
-  border: 1px solid var(--ink-bright);
-  border-radius: 0;
-  background: var(--ink-bright);
-  color: var(--ink-on-light);
-  font-family: var(--sans);
-  font-size: 0.875rem;
-  font-weight: 400;
+  min-height: 2.5rem;
+  padding: 0 var(--space-5);
+  border: 0;
+  border-radius: var(--pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
   cursor: pointer;
 }
 
 .btn:hover {
-  background: var(--ink);
+  filter: brightness(1.06);
 }
 
 .btn.ghost {
-  border-color: var(--bezel);
-  background: transparent;
+  background: var(--panel-2);
   color: var(--ink);
 }
 
 .btn.ghost:hover {
-  border-color: var(--ink-3);
-  background: var(--raised);
+  background: var(--hover);
+  filter: none;
 }
 
 .btn:disabled {
-  border-color: var(--line);
-  background: transparent;
+  background: var(--panel-2);
   color: var(--ink-3);
   cursor: not-allowed;
-}
-
-/* Inset segmented control: the chosen segment goes darker, not lighter. */
-.segmented {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 4px;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--well);
-  box-shadow: inset 0 1px 2px var(--shade);
-}
-
-.segmented > * {
-  display: grid;
-  place-items: center;
-  min-height: 2.375rem;
-  border-radius: 9px;
-  color: var(--ink-2);
-  font-size: 0.875rem;
-}
-
-.segmented > [aria-current="page"],
-.segmented > [aria-pressed="true"] {
-  background: var(--segment-on);
-  color: var(--ink);
-  font-weight: 400;
-}
-
-/* Count badge: a rounded pill of mono digits. */
-.badge {
-  font-family: var(--mono);
-  font-size: var(--step--1);
-  font-weight: 400;
-  padding: 2px 8px;
-  border-radius: 7px;
-  background: var(--line);
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.badge.strong {
-  background: var(--badge);
+  filter: none;
 }
 
 .field {
@@ -432,35 +194,31 @@ textarea {
 }
 
 .field label {
-  font-family: var(--mono);
-  font-size: var(--step--2);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
+  font-size: var(--step--1);
+  color: var(--ink-2);
 }
 
 .field input,
 .field select {
   width: 100%;
-  min-height: 3rem;
+  min-height: 2.75rem;
   padding: 0 var(--space-4);
-  border: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--void);
-  font-weight: 300;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
 }
 
 .field input:focus,
 .field select:focus {
   outline: none;
-  border-color: var(--ink-2);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-/* Status colours, keyed by the backend's meaning, decided only here. */
-[data-tone="ok"] { --tone: var(--ok); }
-[data-tone="warn"] { --tone: var(--warn); }
-[data-tone="bad"] { --tone: var(--bad); }
-[data-tone="quiet"] { --tone: var(--quiet); }
+.field input:disabled,
+.field select:disabled {
+  color: var(--ink-3);
+}
 
 @media (prefers-reduced-motion: no-preference) {
   html {

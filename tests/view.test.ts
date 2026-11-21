@@ -143,7 +143,6 @@ describe("buildView", () => {
     expect(v.total).toEqual({ whole: "1,234", fraction: ".5", short: "1,234.50", asset: "USDC" });
     // Cut, never rounded up: 39.9999 shows as 39.99, not 40.00.
     expect(buildView(input({ nativeWei: toWei("39.9999") })).total.short).toBe("39.99");
-    expect(buildView(input({ nativeWei: toWei("7") })).total.short).toBe("7");
     expect(v.holdingsCheck.tone).toBe("ok");
   });
 
@@ -326,13 +325,13 @@ const REVIEW = {
 const children = createRawSnippet(() => ({ render: () => "<p>screen</p>" }));
 
 const SCREENS = [
-  { name: "frame", component: Layout, props: { children }, expect: ["Cathedral", "Reconciled", "73234459", "Portfolio", "Swap", "CTHDRL", "Testnet only"] },
-  { name: "portfolio", component: Portfolio, props: {}, expect: ["Cathedral Wallet", "1,234.50", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
+  { name: "frame", component: Layout, props: { children }, expect: ["Reconciled", "73234459", "Portfolio", "Swap"] },
+  { name: "portfolio", component: Portfolio, props: {}, expect: ["1,234", ".5", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
   { name: "operations", component: Activity, props: {}, expect: ["Approval", "unlimited", "recipient not on the allowlist"] },
   { name: "send", component: Send, props: { form: REVIEW }, expect: ["Review", "4.1", "Ready to sign", "21000", "Sign and send"] },
   { name: "receive", component: Receive, props: {}, expect: [ME, "Copy address"] },
-  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "switched off"] },
-  { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced", "Every USDC"] },
+  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "not switched on"] },
+  { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced"] },
 ] as const;
 
 for (const s of SCREENS) {

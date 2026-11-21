@@ -1,21 +1,16 @@
 <script lang="ts">
-  // The app's frame: sidebar, top bar, and the screen in between, dressed
-  // as Cathedral. The logo heads the sidebar; menu items are pills, the one
-  // you are on lit by the red bloom. Every screen shares one reading of the
-  // wallet (+layout.server.ts); Refresh reads it again.
-  import "@fontsource/geist/300.css";
-  import "@fontsource/geist/400.css";
-  import "@fontsource/geist/500.css";
-  import "@fontsource/geist-mono/300.css";
-  import "@fontsource/geist-mono/400.css";
-  import "@fontsource/share-tech-mono/400.css";
-  import "@fontsource/space-grotesk/500.css";
+  // The app's frame: sidebar, top bar, and the screen in between. Every
+  // screen shares one reading of the wallet (+layout.server.ts); Refresh
+  // reads it again.
+  import "@fontsource/inter/400.css";
+  import "@fontsource/inter/500.css";
+  import "@fontsource/inter/600.css";
+  import "@fontsource/ibm-plex-mono/400.css";
+  import "@fontsource/ibm-plex-mono/500.css";
   import "#lib/ui/theme.css";
 
   import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
-  import Brand from "#lib/ui/Brand.svelte";
-  import Footer from "#lib/ui/Footer.svelte";
   import Icon, { type IconName } from "#lib/ui/Icon.svelte";
   import Pill from "#lib/ui/Pill.svelte";
   import { discreet, toggleDiscreet } from "#lib/ui/discreet.svelte.ts";
@@ -46,33 +41,35 @@
 
 <div class="app">
   <aside class="sidebar">
-    <a href="/" class="brand" aria-label="Cathedral, portfolio"><Brand /></a>
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
+        <rect width="32" height="32" rx="8" fill="var(--accent)" />
+        <path d="M8 22a8 8 0 0 1 16 0" fill="none" stroke="var(--accent-ink)" stroke-width="3" stroke-linecap="round" />
+        <circle cx="16" cy="22" r="2.2" fill="var(--accent-ink)" />
+      </svg>
+      <span>Arco-Sur</span>
+    </div>
 
     <nav aria-label="Screens">
-      <p class="label head">Menu</p>
+      <p class="nav-head">Menu</p>
       {#each NAV as item (item.href)}
         <a href={item.href} class="nav" aria-current={page.url.pathname === item.href ? "page" : undefined}>
           <Icon name={item.icon} />
-          <span class="nav-label">{item.label}</span>
-          {#if item.href === "/activity"}<span class="badge num">{data.stats.operations}</span>{/if}
-          {#if item.href === "/swap"}<span class="badge">off</span>{/if}
+          <span>{item.label}</span>
         </a>
       {/each}
     </nav>
 
     <div class="account">
-      <p class="label head">Account</p>
+      <p class="nav-head">Account</p>
       <a href="/receive" class="acct">
-        <span class="acct-mark num" aria-hidden="true">0x</span>
+        <span class="acct-dot" aria-hidden="true"></span>
         <span class="acct-text">
           <span>Testnet wallet</span>
-          <span class="num faint">{data.wallet.short}</span>
+          <span class="num muted">{data.wallet.short}</span>
         </span>
       </a>
-      <div class="plates">
-        <div class="plate"><span>Net</span><span>Arc test</span></div>
-        <div class="plate"><span>Block</span><span>{data.block}</span></div>
-      </div>
+      <p class="network"><Icon name="lock" size="0.9rem" /> {data.network}</p>
     </div>
   </aside>
 
@@ -80,7 +77,7 @@
     <header class="topbar">
       <div class="sync">
         <Pill tone={data.verdict.tone} label={data.verdict.label} />
-        <span class="label">block <span class="num">{data.block}</span> / read <span class="num">{data.readAt}</span></span>
+        <span class="muted">block <span class="num">{data.block}</span> · read <span class="num">{data.readAt}</span></span>
       </div>
       <div class="tools">
         <button class="tool" onclick={refresh} disabled={refreshing} aria-label="Read the wallet again" title="Refresh">
@@ -101,15 +98,13 @@
     <main class="screen">
       {@render children()}
     </main>
-
-    <Footer {data} />
   </div>
 </div>
 
 <style>
   .app {
     display: grid;
-    grid-template-columns: 15.5rem minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
     min-height: 100vh;
   }
 
@@ -119,11 +114,12 @@
     height: 100vh;
     display: flex;
     flex-direction: column;
-    gap: var(--space-6);
+    gap: var(--space-5);
+    padding: var(--space-4) var(--space-3);
     /* room for the window's traffic-light buttons */
-    padding: 3.25rem var(--space-3) var(--space-3);
-    background: var(--pane);
-    border-right: 1px solid var(--line);
+    padding-top: calc(var(--topbar-height) + var(--space-2));
+    background: var(--sidebar);
+    border-right: 1px solid var(--rule);
     -webkit-app-region: drag;
   }
 
@@ -132,7 +128,12 @@
   }
 
   .brand {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
     padding: 0 var(--space-3);
+    font-size: var(--step-1);
+    font-weight: 600;
   }
 
   nav {
@@ -140,60 +141,39 @@
     gap: 2px;
   }
 
-  .head {
+  .nav-head {
     margin: 0 0 var(--space-2);
     padding: 0 var(--space-3);
+    font-size: var(--step--2);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
   }
 
-  /* Menu items are pills; the current one is lifted a tint and bloomed. */
   .nav {
-    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    min-height: 2.75rem;
-    padding: 0 var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius);
     color: var(--ink-2);
-    font-size: 0.9375rem;
+    font-weight: 500;
   }
 
   .nav:hover {
-    background: var(--raised);
+    background: var(--panel);
     color: var(--ink);
   }
 
   .nav[aria-current="page"] {
-    background: var(--line);
+    background: var(--panel-2);
     color: var(--ink);
-    font-weight: 400;
-  }
-
-  .nav[aria-current="page"]::before {
-    content: "";
-    position: absolute;
-    left: calc(var(--space-3) * -1);
-    top: 50%;
-    width: 3px;
-    height: 22px;
-    margin-top: -11px;
-    border-radius: 0 2px 2px 0;
-    background: var(--signal);
-    box-shadow: var(--signal-bloom);
-  }
-
-  .nav-label {
-    flex: 1;
+    box-shadow: inset 3px 0 0 var(--accent);
   }
 
   .account {
     margin-top: auto;
-    display: grid;
-    gap: var(--space-3);
-  }
-
-  .account .head {
-    margin: 0;
   }
 
   .acct {
@@ -205,18 +185,14 @@
   }
 
   .acct:hover {
-    background: var(--raised);
+    background: var(--panel);
   }
 
-  .acct-mark {
-    display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: var(--pill);
-    border: 1px solid var(--bezel);
-    background: var(--raised);
-    font-size: var(--step--2);
+  .acct-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+    border-radius: 50%;
+    background: var(--usd);
   }
 
   .acct-text {
@@ -224,14 +200,14 @@
     font-size: var(--step--1);
   }
 
-  .plate {
-    font-size: 0.9375rem;
-  }
-
-  .main {
+  .network {
     display: flex;
-    flex-direction: column;
-    min-width: 0;
+    align-items: center;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+    padding: 0 var(--space-3);
+    font-size: var(--step--2);
+    color: var(--ink-3);
   }
 
   .topbar {
@@ -242,10 +218,10 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--space-4);
-    height: 3.5rem;
-    padding: 0 var(--space-6);
+    height: var(--topbar-height);
+    padding: 0 var(--space-5);
     background: var(--bg);
-    border-bottom: 1px solid var(--line);
+    border-bottom: 1px solid var(--rule);
     -webkit-app-region: drag;
   }
 
@@ -254,6 +230,7 @@
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
+    font-size: var(--step--1);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -270,14 +247,14 @@
     width: 2.25rem;
     height: 2.25rem;
     border: 0;
-    border-radius: var(--radius);
+    border-radius: 50%;
     background: transparent;
     color: var(--ink-2);
     cursor: pointer;
   }
 
   .tool:hover {
-    background: var(--raised);
+    background: var(--panel);
     color: var(--ink);
   }
 
@@ -297,11 +274,10 @@
   }
 
   .screen {
-    flex: 1;
     width: 100%;
     max-width: var(--content-width);
     margin: 0 auto;
-    padding: var(--space-6) var(--space-6) var(--space-8);
+    padding: var(--space-6) var(--space-5) var(--space-7);
   }
 
   @media (max-width: 48rem) {
@@ -319,18 +295,13 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
 
-    .head,
-    .account,
-    .badge {
+    .nav-head,
+    .account {
       display: none;
     }
 
-    .topbar {
-      padding: 0 var(--space-4);
-    }
-
     .screen {
-      padding: var(--space-5) var(--space-4) var(--space-7);
+      padding: var(--space-5) var(--space-4) var(--space-6);
     }
   }
 </style>

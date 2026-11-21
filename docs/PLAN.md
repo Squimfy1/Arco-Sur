@@ -420,27 +420,15 @@ the backend, code in the contract and a sum in a template each failed its test.
 
 ---
 
-## Stage 9c · Cathedral  ·  DONE
+## Stage 9c · Cathedral, tried and set aside  ·  2026-11-21
 
-**Concept: a skin swap proves the split.** The whole look changed and the
-backend did not, beyond two short-amount fields.
-
-**Result (2026-11-21):** the app is now Cathedral.app, in the Cathedral
-Library UI system v0.3 (the "Cathedral Logos" canvas): its tokens, fonts
-(Geist, Geist Mono, Share Tech Mono, Space Grotesk for the capital-C
-wordmark), film grain, halftone, terrain and stack images, plates, glass
-folders, bloom and registration marks, inside the earlier sidebar-and-top-bar
-structure. Portfolio opens on a mosaic wall: the Cathedral cross in tiles on
-a dark field, lit in stained glass under the pointer (`mosaic.ts` geometry,
-`Mosaic.svelte` canvas; still for reduced motion). The backend added only
-`total.short` and `holdings[].short`: amounts cut, never rounded up, to two
-decimals. The CSP is unchanged; Vite now keeps fonts and images as files
-instead of inlining them, so `font-src 'self'` needs no exception.
-
-Tests: 140 offline. New `mosaic.test.ts` (placement, which tiles ask the
-mark, stable grain and colours, colour parsing). The trace test caught a
-"no. 01" typed into a colophon, and the colour check caught a helper named
-`rgb(`; both fixed at the source, not by loosening the checks.
+The app was dressed for a while in the Cathedral Library UI system, with a
+mosaic wall of the Cathedral cross (commit 41d5f16). Tom chose the Stage 9b
+look as the base instead, so the frontend is back to 9b. Kept from 9c:
+`total.short` and `holdings[].short` (amounts cut, never rounded up, to two
+decimals), and Vite keeping fonts and images as files so the CSP needs no
+exception. Next on the look: a few small touches from a reference site Tom
+will name.
 
 ---
 

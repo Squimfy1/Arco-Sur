@@ -1,43 +1,47 @@
 <script lang="ts">
-  // Shown when a screen cannot be read. (When the whole wallet cannot be
-  // read, src/error.html is shown instead.) The message is the server's own;
-  // it never contains the key.
+  // Shown when the page cannot be read: no key file, or the node is down.
+  // The message is the server's own; it never contains the key.
   import { page } from "$app/state";
 </script>
 
 <svelte:head>
-  <title>Cathedral · not read</title>
+  <title>Arco-Sur · not read</title>
 </svelte:head>
 
-<section class="err">
-  <p class="label">Cathedral / not read / {page.status}</p>
-  <h1 class="display">This screen could not be <em>read</em></h1>
-  <pre class="msg">{page.error?.message ?? "Unknown error"}</pre>
-  <a class="btn" href="/" data-sveltekit-reload>Try again</a>
-</section>
+<main>
+  <p class="product">Arco-Sur</p>
+  <h1>The wallet could not be read</h1>
+  <p class="msg">{page.error?.message ?? "Unknown error"}</p>
+  <p><a href="/" data-sveltekit-reload>Try again</a></p>
+</main>
 
 <style>
-  .err {
-    display: grid;
-    gap: var(--space-5);
-    justify-items: start;
+  main {
     max-width: 44rem;
+    margin: 0 auto;
+    padding: var(--space-6) var(--space-4);
   }
 
-  .err .label {
+  .product {
     margin: 0;
+    font-size: var(--step--1);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--ink-2);
+  }
+
+  h1 {
+    font-size: var(--step-2);
+    font-weight: 500;
+    margin: var(--space-1) 0 var(--space-4);
   }
 
   .msg {
-    margin: 0;
-    width: 100%;
-    padding: var(--space-4);
-    border: 1px solid var(--line);
-    background: var(--void);
     font-family: var(--mono);
     font-size: var(--step--1);
-    color: var(--ink-read);
-    white-space: pre-wrap;
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
     overflow-wrap: anywhere;
   }
 </style>
