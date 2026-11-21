@@ -26,7 +26,7 @@ import { EURC, USDC } from "../src/lib/server/contracts.ts";
 import { toWei } from "../src/lib/server/guard.ts";
 import { walletMandate } from "../src/lib/server/mandate.ts";
 import type { Report, Row } from "../src/lib/server/reconcile.ts";
-import { type View, type ViewInput, buildView, dayLabel, group, history } from "../src/lib/server/view.ts";
+import { type View, type ViewInput, buildView, cut, dayLabel, group, history } from "../src/lib/server/view.ts";
 import { draw } from "../src/lib/ui/chart.ts";
 import Layout from "../src/routes/+layout.svelte";
 import Portfolio from "../src/routes/+page.svelte";
@@ -121,6 +121,13 @@ function input(over: Partial<ViewInput> = {}): ViewInput {
 }
 
 describe("buildView", () => {
+  test("cut keeps two decimals and never rounds up", () => {
+    expect(cut("39.9950290611")).toBe("39.99");
+    expect(cut("1,234.5")).toBe("1,234.50");
+    expect(cut("0")).toBe("0");
+    expect(cut("—")).toBe("—");
+  });
+
   test("groups thousands and keeps every decimal", () => {
     expect(group("1234567.0000001")).toBe("1,234,567.0000001");
     expect(group("-1000")).toBe("-1,000");
@@ -129,8 +136,14 @@ describe("buildView", () => {
 
   test("shows native USDC and other tokens, and uses USDC's token view only as a check", () => {
     const v = buildView(input());
-    expect(v.holdings.map((h) => [h.asset, h.amount, h.badge])).toEqual([["USDC", "1,234.5", "$"], ["EURC", "2.5", "€"]]);
-    expect(v.total).toEqual({ whole: "1,234", fraction: ".5", asset: "USDC" });
+    expect(v.holdings.map((h) => [h.asset, h.amount, h.short, h.badge])).toEqual([
+      ["USDC", "1,234.5", "1,234.50", "$"],
+      ["EURC", "2.5", "2.50", "€"],
+    ]);
+    expect(v.total).toEqual({ whole: "1,234", fraction: ".5", short: "1,234.50", asset: "USDC" });
+    // Cut, never rounded up: 39.9999 shows as 39.99, not 40.00.
+    expect(buildView(input({ nativeWei: toWei("39.9999") })).total.short).toBe("39.99");
+    expect(buildView(input({ nativeWei: toWei("7") })).total.short).toBe("7");
     expect(v.holdingsCheck.tone).toBe("ok");
   });
 
@@ -313,13 +326,13 @@ const REVIEW = {
 const children = createRawSnippet(() => ({ render: () => "<p>screen</p>" }));
 
 const SCREENS = [
-  { name: "frame", component: Layout, props: { children }, expect: ["Reconciled", "73234459", "Portfolio", "Swap"] },
-  { name: "portfolio", component: Portfolio, props: {}, expect: ["1,234", ".5", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
+  { name: "frame", component: Layout, props: { children }, expect: ["Cathedral", "Reconciled", "73234459", "Portfolio", "Swap", "CTHDRL", "Testnet only"] },
+  { name: "portfolio", component: Portfolio, props: {}, expect: ["Cathedral Wallet", "1,234.50", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
   { name: "operations", component: Activity, props: {}, expect: ["Approval", "unlimited", "recipient not on the allowlist"] },
   { name: "send", component: Send, props: { form: REVIEW }, expect: ["Review", "4.1", "Ready to sign", "21000", "Sign and send"] },
   { name: "receive", component: Receive, props: {}, expect: [ME, "Copy address"] },
-  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "not switched on"] },
-  { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced"] },
+  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "switched off"] },
+  { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced", "Every USDC"] },
 ] as const;
 
 for (const s of SCREENS) {

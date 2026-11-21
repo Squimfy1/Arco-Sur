@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A status word in its tone's colour. The word always comes with it.
+  // A status word with a glowing dot in its tone. The word always comes with it.
   import type { Tone } from "../contract.ts";
   let { tone, label }: { tone: Tone; label: string } = $props();
 </script>
@@ -10,21 +10,32 @@
   .pill {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-1);
-    padding: 0.1rem var(--space-2);
+    gap: 0.5em;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--line);
     border-radius: var(--pill);
+    background: var(--void);
+    font-family: var(--mono);
     font-size: var(--step--2);
-    font-weight: 500;
-    color: var(--tone);
-    background: var(--tone-bg);
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-read);
     white-space: nowrap;
   }
 
   .pill::before {
     content: "";
-    width: 0.4rem;
-    height: 0.4rem;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: currentColor;
+    background: var(--tone);
+    box-shadow: 0 0 8px var(--tone);
+  }
+
+  .pill[data-tone="quiet"]::before {
+    background: transparent;
+    border: 1px solid var(--tone);
+    box-shadow: none;
   }
 </style>

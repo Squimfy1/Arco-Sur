@@ -20,7 +20,7 @@
         </linearGradient>
       </defs>
       <path d={drawn.area} fill="url(#fill)" />
-      <path d={drawn.line} fill="none" stroke="var(--chart-line)" stroke-width="2" vector-effect="non-scaling-stroke" />
+      <path d={drawn.line} fill="none" stroke="var(--chart-line)" stroke-width="1.5" vector-effect="non-scaling-stroke" />
     </svg>
     <span class="high num money">{history.high}</span>
     <span class="low num money">{history.low}</span>
@@ -50,9 +50,10 @@
   .low {
     position: absolute;
     right: 0;
+    font-family: var(--mono);
     font-size: var(--step--2);
-    color: var(--ink-3);
-    background: var(--panel);
+    color: var(--ink-2);
+    background: var(--void);
     padding: 0 var(--space-1);
   }
 
@@ -67,8 +68,11 @@
   figcaption {
     display: flex;
     justify-content: space-between;
-    margin-top: var(--space-2);
+    margin-top: var(--space-3);
+    font-family: var(--mono);
     font-size: var(--step--2);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--ink-3);
   }
 </style>

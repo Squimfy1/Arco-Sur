@@ -27,6 +27,9 @@ export default defineConfig({
       },
     }),
   ],
+  // Every font and image stays a real file, never an inline data: URL, so the
+  // strict font-src and img-src above need no exception.
+  build: { assetsInlineLimit: 0 },
   // `npm run dev` only, for working on the screens with hot reload.
   server: local,
   preview: local,

@@ -26,7 +26,8 @@ src/lib/server/   the backend: reads the chain and the log, holds the key
   review.ts       the Send screen's Review: guard + rehearsal, never signs
   memo.ts         remembers chain answers that can no longer change
 src/lib/contract.ts  the data the backend hands the screens; types only
-src/lib/ui/       the look: theme.css (every colour and size), icons, components
+src/lib/ui/       the look: theme.css (every colour and size), the Cathedral
+                  cross and images, the mosaic wall, components
 src/routes/       the screens (SvelteKit): Portfolio, Operations, Send,
                   Receive, Swap, Rules; +layout.server.ts reads for all of them
 electron/         the desktop app: main.js runs the screens with no network port
@@ -83,16 +84,21 @@ contract is refused, never shown as a zero balance.
 ### The desktop app
 
 ```
-npm run install-app   # builds Arco-Sur.app and puts it in ~/Applications
+npm run install-app   # builds Cathedral.app and puts it in ~/Applications
 npm run app           # or: build and open it straight from the repo
 ```
 
-A desktop wallet in the style of a hardware-wallet companion app: Portfolio
-(balance, balance history, assets, latest operations), Operations (every
-send and refusal, by day, checked against the chain), Send, Receive, Swap and
-Rules (the limits, how much is used, and the accounting). The top bar shows
-whether the log reconciles, re-reads on Refresh, and the eye hides every
-amount.
+The app is branded **Cathedral**, in the Cathedral Library UI system: grain
+on near-black, Geist and Geist Mono, readout plates, "+" registration marks,
+signal red only as a bloom or a 2 px line, and the Cathedral cross. Portfolio
+opens on a mosaic wall: the cross set in small tiles that light up in
+stained-glass colours where the pointer passes. Then the balance (cut to two
+decimals; hover for the exact figure), the Send / Receive / Swap / Faucet /
+Explorer buttons, the balance history, assets and latest operations. The
+other screens are Operations (every send and refusal, by day, checked against
+the chain), Send, Receive, Swap and Rules (limits as glass folders, and the
+books as plates). The top bar shows whether the log reconciles, re-reads on
+Refresh, and the eye hides every amount.
 
 - **Send** checks a payment against the rules and rehearses it on the node,
   then shows the fee. It does not sign yet (Stage 10): `npm run send` does.

@@ -22,6 +22,8 @@ export type Holding = {
   name: string;
   badge: string;          // the character that stands for the asset: $, €
   amount: string;
+  /** The same amount cut (never rounded up) to two decimals, for small places. */
+  short: string;
   decimals: string;
   source: string;
 };
@@ -106,8 +108,11 @@ export type View = {
   block: string;
   wallet: { address: string; short: string; url: string };
   verdict: { tone: Tone; label: string; counts: string };
-  /** The headline balance, split so whole units and decimals can be set apart. */
-  total: { whole: string; fraction: string; asset: string };
+  /**
+   * The headline balance. whole + fraction is exact; short is the same
+   * amount cut (never rounded up) to two decimals, for a big display.
+   */
+  total: { whole: string; fraction: string; short: string; asset: string };
   history: History | null;
   holdings: Holding[];
   holdingsCheck: { tone: Tone; text: string };

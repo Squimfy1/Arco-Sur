@@ -1,5 +1,5 @@
 /**
- * Arco-Sur as a desktop app.
+ * Cathedral (the Arco-Sur wallet) as a desktop app.
  *
  * The SvelteKit server runs INSIDE this process: no port is opened, not even
  * on localhost. The window asks for arco://app/..., and the handler below
@@ -107,8 +107,8 @@ function openWindow() {
     height: 820,
     minWidth: 720,
     minHeight: 520,
-    title: "Arco-Sur",
-    backgroundColor: "#141317",
+    title: "Cathedral",
+    backgroundColor: "#0e0e0e",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {

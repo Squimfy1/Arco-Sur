@@ -54,6 +54,15 @@ export function stamp(d: Date): string {
   );
 }
 
+/**
+ * "1,234.56789" → "1,234.56": at most two decimals, cut and never rounded
+ * up, so a short figure never shows more than is there. "—" stays "—".
+ */
+export function cut(grouped: string): string {
+  const [whole = grouped, frac] = grouped.split(".");
+  return frac === undefined ? whole : `${whole}.${frac.slice(0, 2).padEnd(2, "0")}`;
+}
+
 /** 1234567.5 → "1,234,567.5": thousands grouped, every decimal kept. */
 export function group(amount: string): string {
   const [whole = "", frac] = amount.split(".");
@@ -213,11 +222,13 @@ export function buildView(input: ViewInput): View {
 
   // Holdings: native USDC (what pays gas), then every token except USDC's
   // own ERC-20 view, which is the same money and is used only as a check.
+  const nativeAmount = input.nativeWei === null ? unknown : group(fromWei(input.nativeWei) ?? unknown);
   const holdings: Holding[] = [
     {
       asset: "USDC",
       ...NAMES["USDC"]!,
-      amount: input.nativeWei === null ? unknown : group(fromWei(input.nativeWei) ?? unknown),
+      amount: nativeAmount,
+      short: cut(nativeAmount),
       decimals: "18",
       source: "native balance, pays gas",
     },
@@ -232,6 +243,7 @@ export function buildView(input: ViewInput): View {
       asset: balance.symbol,
       ...(NAMES[balance.symbol] ?? { name: balance.symbol, badge: balance.symbol.slice(0, 1) }),
       amount: group(balance.formatted),
+      short: cut(group(balance.formatted)),
       decimals: String(balance.decimals),
       source: `token ${short(contract.address)}`,
     });
@@ -313,7 +325,13 @@ export function buildView(input: ViewInput): View {
       label: report.ok ? "Reconciled" : "Not reconciled",
       counts: counted.join(" · "),
     },
-    total: { whole, fraction: fraction === undefined ? "" : `.${fraction}`, asset: "USDC" },
+    total: {
+      whole,
+      fraction: fraction === undefined ? "" : `.${fraction}`,
+      // Cut, not rounded: the big number never shows more than is there.
+      short: cut(native),
+      asset: "USDC",
+    },
     history: input.history === undefined ? null : history(input.history),
     holdings,
     holdingsCheck,

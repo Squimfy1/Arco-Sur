@@ -24,19 +24,16 @@
 </script>
 
 <svelte:head>
-  <title>Arco-Sur · Send</title>
+  <title>Cathedral · Send</title>
 </svelte:head>
 
-<h1>Send</h1>
-<p class="muted lede">Every payment is checked against this wallet's rules and rehearsed on the chain before anything is signed.</p>
+<header class="page-head">
+  <p class="label">Move / send / review before signing</p>
+  <h1 class="display">Send a <em>payment</em></h1>
+</header>
 
 <div class="layout">
-  <form
-    class="card form"
-    method="POST"
-    action="?/review"
-    use:enhance={submit}
-  >
+  <form class="card form reg" method="POST" action="?/review" use:enhance={submit}>
     <div class="field">
       <label for="asset">Asset</label>
       <select id="asset" name="asset" value={review?.form.asset ?? "USDC"}>
@@ -61,47 +58,55 @@
       <input id="amount" name="amount" class="num" inputmode="decimal" placeholder="0.1" autocomplete="off" required value={review?.form.amount ?? ""} />
     </div>
 
-    <button class="btn" type="submit" disabled={reviewing}>
-      <Icon name="rules" size="1.1rem" />
-      {reviewing ? "Checking…" : "Review"}
-    </button>
+    <div class="submit">
+      <button class="btn" type="submit" disabled={reviewing}>
+        <Icon name="rules" size="1.05rem" />
+        {reviewing ? "Checking…" : "Review"}
+      </button>
+      <span class="label">Checks the rules, then rehearses on the chain. Signs nothing.</span>
+    </div>
   </form>
 
-  <aside class="card limits">
-    <h2 class="card-title">What you may send</h2>
-    {#each data.mandate.limits as l (l.asset)}
-      <div class="limit">
-        <AssetBadge asset={l.asset} badge={l.badge} size="1.75rem" />
-        <span>
-          <span class="num money">{l.left} {l.asset}</span> left of <span class="num money">{l.total}</span>
-          <span class="muted block">at most <span class="num money">{l.perPayment}</span> per payment</span>
+  <aside class="side">
+    <div class="key-idea">
+      <span class="label">+ Key idea</span>
+      <span>Nothing is signed until the rules allow what the transaction actually does.</span>
+    </div>
+    <div class="plates" aria-label="What you may send">
+      {#each data.mandate.limits as l (l.asset)}
+        <div class="plate"><span>{l.asset} left</span><span class="money">{l.left} / {l.total}</span></div>
+        <div class="plate"><span>Per payment</span><span class="money">{l.perPayment}</span></div>
+      {/each}
+    </div>
+    <div class="only">
+      <span class="label">Only to</span>
+      {#each data.mandate.recipients as r (r.address)}
+        <span class="recipient">
+          <AssetBadge badge="→" size="1.5rem" />
+          <span class="num">{r.address}</span>{#if r.label}<span class="faint tag">{r.label}</span>{/if}
         </span>
-      </div>
-    {/each}
-    <p class="muted small">Only to:</p>
-    {#each data.mandate.recipients as r (r.address)}
-      <p class="small num">{r.address}{#if r.label}<span class="muted tag">· {r.label}</span>{/if}</p>
-    {/each}
+      {/each}
+    </div>
   </aside>
 </div>
 
 {#if review}
-  <section class="card result" data-tone={review.tone} aria-live="polite">
+  <section class="card void result reg" data-tone={review.tone} aria-live="polite">
     <div class="result-head">
-      <h2 class="card-title">{review.title}</h2>
+      <h2 class="heading">{review.title}</h2>
       <Pill tone={review.tone} label={review.tone === "ok" ? "Passed" : "Stopped"} />
     </div>
     <ol class="steps">
       {#each review.steps as s (s.label)}
         <li data-tone={s.tone}>
-          <span class="step-label">{s.label}</span>
+          <span class="step-label label">{s.label}</span>
           <span class="step-text">{s.text}</span>
         </li>
       {/each}
     </ol>
     {#if review.tone === "ok"}
       <div class="sign">
-        <button class="btn" disabled><Icon name="lock" size="1.1rem" /> Sign and send</button>
+        <button class="btn" disabled><Icon name="lock" size="1.05rem" /> Sign and send</button>
         <p class="muted small">
           Signing from the app arrives in Stage 10. Until then, send this exact payment with
           <code>npm run send</code>, which runs the same checks and then signs.
@@ -112,59 +117,64 @@
 {/if}
 
 <style>
-  h1 {
-    margin: 0;
-    font-size: var(--step-3);
-    font-weight: 600;
+  .page-head {
+    padding-bottom: var(--space-6);
   }
 
-  .lede {
-    margin: var(--space-1) 0 var(--space-5);
+  .page-head .label {
+    margin: 0 0 var(--space-3);
   }
 
   .layout {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    gap: var(--space-5);
+    gap: var(--space-6);
     align-items: start;
   }
 
   .form {
     display: grid;
+    gap: var(--space-5);
+    padding-top: var(--space-6);
+  }
+
+  .submit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-4);
   }
 
-  .form .btn {
-    justify-self: start;
+  .side {
+    display: grid;
+    gap: var(--space-5);
   }
 
-  .limit {
+  .only {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .recipient {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--rule);
-  }
-
-  .block {
-    display: block;
-    font-size: var(--step--1);
-  }
-
-  .small {
+    gap: var(--space-2);
     font-size: var(--step--1);
     overflow-wrap: anywhere;
   }
 
   .result {
-    margin-top: var(--space-5);
-    box-shadow: inset 0 0 0 1px var(--tone);
+    margin-top: var(--space-6);
+    padding-top: var(--space-6);
+    border-color: var(--tone);
   }
 
   .result-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
   }
 
   .steps {
@@ -177,16 +187,14 @@
 
   .steps li {
     display: grid;
-    grid-template-columns: 6rem minmax(0, 1fr);
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: var(--radius);
-    background: var(--panel-2);
-    border-left: 3px solid var(--tone);
+    grid-template-columns: 7rem minmax(0, 1fr);
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+    background: var(--pane);
+    border-left: 1px solid var(--tone);
   }
 
   .step-label {
-    font-weight: 600;
     color: var(--tone);
   }
 
@@ -195,7 +203,11 @@
   }
 
   .sign {
-    margin-top: var(--space-4);
+    margin-top: var(--space-5);
+  }
+
+  .small {
+    font-size: var(--step--1);
   }
 
   code {
@@ -203,7 +215,7 @@
     color: var(--ink);
   }
 
-  @media (max-width: 48rem) {
+  @media (max-width: 52rem) {
     .layout {
       grid-template-columns: minmax(0, 1fr);
     }
