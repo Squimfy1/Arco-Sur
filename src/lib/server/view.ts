@@ -1,5 +1,5 @@
 /**
- * Stage 9: turn what the chain and the log say into what the page shows.
+ * Turn what the chain and the log say into what the page shows.
  *
  * The page renders, it never calculates. Every amount, count, date and
  * percentage is decided here, on the server, as a finished string. The
@@ -7,10 +7,15 @@
  * place (bigint, never floating point) and lets a test check that every
  * number on screen came from this object.
  *
+ * It produces data only: words, amounts and meanings ("ok", "out"), typed by
+ * src/lib/contract.ts. No colour, size, class name or coordinate is decided
+ * here; how any of it looks belongs to the frontend (src/lib/ui).
+ *
  * buildView is pure: give it the readings, get the view. load() in
- * src/routes/+page.server.ts does the reading.
+ * src/routes/+layout.server.ts does the reading.
  */
 
+import type { Accounting, ActivityRow, Day, History, Holding, Limit, SenderView, Tone, View } from "../contract.ts";
 import { CHAIN_ID } from "./arc.ts";
 import type { KnownContract } from "./contracts.ts";
 import { ARC_USDC_TOKEN, type Mandate, type Spent, fromUnits, fromWei, normalise, toUnits } from "./guard.ts";
@@ -18,77 +23,12 @@ import type { TokenBalance } from "./read.ts";
 import { type Report, type Row, type Status, claimed } from "./reconcile.ts";
 
 export const EXPLORER = "https://testnet.arcscan.app";
+/** Circle's testnet faucet: where test USDC and EURC come from. */
+export const FAUCET = "https://faucet.circle.com";
 
-/** How a value should read: fine, needs a look, wrong, or simply recorded. */
-export type Tone = "ok" | "warn" | "bad" | "quiet";
-
-export type Holding = { asset: string; amount: string; decimals: string; source: string };
-
-export type Limit = {
-  asset: string;
-  perPayment: string;
-  total: string;
-  used: string;
-  left: string;
-  usedPercent: string;   // "0".."100", for the bar's width only
-};
-
-export type ActivityRow = {
-  line: string;
-  when: string;
-  nonce: string;
-  status: string;
-  tone: Tone;
-  kind: string;
-  amount: string;
-  asset: string;
-  to: string;
-  toShort: string;
-  toLabel: string;        // "this wallet", or ""
-  fee: string;
-  detail: string;
-  txUrl: string | null;
-  problems: string[];
-};
-
-export type Accounting = {
-  address: string;
-  startBlock: string;
-  start: string;
-  fees: string;
-  outflow: string;
-  expected: string;
-  now: string;
-  unexplained: string;
-  tone: Tone;
-  verdict: string;
-};
-
-export type SenderView = {
-  address: string;
-  label: string;          // checksummed, with "this wallet" when it is
-  chainNonce: string;
-  gaps: string;
-  gapsTone: Tone;
-  duplicates: string;
-  feesPaid: string;
-  accounting: Accounting | null;
-};
-
-export type View = {
-  readAt: string;
-  network: string;
-  block: string;
-  wallet: { address: string; short: string; url: string };
-  verdict: { tone: Tone; label: string; counts: string };
-  holdings: Holding[];
-  holdingsCheck: { tone: Tone; text: string };
-  mandate: { recipients: string[]; spenders: string; limits: Limit[] };
-  activity: ActivityRow[];
-  senders: SenderView[];
-  orphans: string[];
-};
-
+export type {
+  Accounting, ActivityRow, Day, History, Holding, Limit, SenderView, Tone, View,
+} from "../contract.ts";
 export type ViewInput = {
   me: string;
   readAt: Date;
@@ -98,6 +38,8 @@ export type ViewInput = {
   report: Report;
   spent: Spent;
   mandate: Mandate;
+  /** Native balance at some blocks, for the chart. Optional: no chart without it. */
+  history?: readonly { block: bigint; wei: bigint }[];
 };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -137,8 +79,31 @@ const KIND: Record<string, string> = {
   unknown: "Unknown call",
 };
 
+const NAMES: Record<string, { name: string; badge: string }> = {
+  USDC: { name: "US Dollar Coin", badge: "$" },
+  EURC: { name: "Euro Coin", badge: "€" },
+};
+
+const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July",
+  "August", "September", "October", "November", "December"];
+
+/** "Friday 20 November 2026": a heading for one day of operations. */
+export function dayLabel(d: Date): string {
+  return `${DAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function activity(row: Row, me: string): ActivityRow {
   const r = row.entry.record;
+  const when = new Date(r.ts * 1000);
+  const fromMe = normalise(r.from) === normalise(me);
+  const toMe = normalise(r.to) === normalise(me);
+  const icon: ActivityRow["icon"] =
+    row.status === "REFUSED" ? "refused"
+    : r.kind === "approve" ? "approve"
+    : fromMe && toMe ? "self"
+    : fromMe ? "out"
+    : "in";
   const { amount, asset } = claimed(r);
   const to = r.to;
   let detail = "";
@@ -151,7 +116,7 @@ function activity(row: Row, me: string): ActivityRow {
   }
   return {
     line: String(row.entry.line),
-    when: stamp(new Date(r.ts * 1000)),
+    when: stamp(when),
     nonce: r.nonce === undefined ? unknown : String(r.nonce),
     status: STATUS[row.status].label,
     tone: STATUS[row.status].tone,
@@ -166,6 +131,60 @@ function activity(row: Row, me: string): ActivityRow {
     detail,
     txUrl: r.tx_hash === undefined ? null : `${EXPLORER}/tx/${r.tx_hash}`,
     problems: row.problems,
+    icon,
+    day: stamp(when).slice(0, 10),
+    time: stamp(when).slice(11),
+  };
+}
+
+/** Group operations (already newest first) under one heading per day. */
+function byDay(rows: readonly { row: ActivityRow; at: Date }[]): Day[] {
+  const days: Day[] = [];
+  for (const { row, at } of rows) {
+    const last = days.at(-1);
+    if (last !== undefined && last.rows[0]?.day === row.day) {
+      last.rows.push(row);
+    } else {
+      days.push({ label: dayLabel(at), rows: [row] });
+    }
+  }
+  return days;
+}
+
+/**
+ * The balance history: each point's place as a fraction (0..1) of the block
+ * span and of the balance range. The money math stays here in bigint; the
+ * frontend decides how big the chart is and how it is drawn.
+ */
+export function history(points: readonly { block: bigint; wei: bigint }[]): History | null {
+  const sorted = [...new Map(points.map((p) => [p.block, p])).values()].sort((a, b) =>
+    a.block < b.block ? -1 : a.block > b.block ? 1 : 0,
+  );
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (first === undefined || last === undefined || first.block === last.block) return null;
+
+  let lo = first.wei;
+  let hi = first.wei;
+  for (const p of sorted) {
+    if (p.wei < lo) lo = p.wei;
+    if (p.wei > hi) hi = p.wei;
+  }
+  const span = last.block - first.block;
+  const range = hi - lo;
+  // Fractions to 4 places, worked out in bigint; a flat balance sits at 0.5.
+  const frac = (part: bigint, whole: bigint) => Number((part * 10_000n) / whole) / 10_000;
+  return {
+    points: sorted.map((p) => ({
+      x: frac(p.block - first.block, span),
+      y: range === 0n ? 0.5 : frac(p.wei - lo, range),
+      block: String(p.block),
+      balance: group(fromWei(p.wei) ?? unknown),
+    })),
+    high: group(fromWei(hi) ?? unknown),
+    low: group(fromWei(lo) ?? unknown),
+    from: `block ${first.block}`,
+    to: `block ${last.block}`,
   };
 }
 
@@ -176,6 +195,7 @@ function limit(asset: string, perPayment: string, total: string, used: string, d
   const pct = totalUnits === 0n ? 0n : (usedUnits * 100n) / totalUnits;
   return {
     asset,
+    badge: NAMES[asset]?.badge ?? asset.slice(0, 1),
     perPayment: group(perPayment),
     total: group(total),
     used: group(fromUnits(usedUnits, decimals) ?? "0"),
@@ -196,6 +216,7 @@ export function buildView(input: ViewInput): View {
   const holdings: Holding[] = [
     {
       asset: "USDC",
+      ...NAMES["USDC"]!,
       amount: input.nativeWei === null ? unknown : group(fromWei(input.nativeWei) ?? unknown),
       decimals: "18",
       source: "native balance, pays gas",
@@ -209,6 +230,7 @@ export function buildView(input: ViewInput): View {
     }
     holdings.push({
       asset: balance.symbol,
+      ...(NAMES[balance.symbol] ?? { name: balance.symbol, badge: balance.symbol.slice(0, 1) }),
       amount: group(balance.formatted),
       decimals: String(balance.decimals),
       source: `token ${short(contract.address)}`,
@@ -276,6 +298,11 @@ export function buildView(input: ViewInput): View {
     };
   });
 
+  const rows = report.rows.map((r) => ({ row: activity(r, me), at: new Date(r.entry.record.ts * 1000) })).reverse();
+  const native = holdings[0]!.amount;
+  const [whole = native, fraction] = native.split(".");
+  const fees = report.senders.reduce((n, s) => n + s.fees, 0n);
+
   return {
     readAt: stamp(input.readAt),
     network: `Arc testnet · chain ${CHAIN_ID}`,
@@ -286,16 +313,29 @@ export function buildView(input: ViewInput): View {
       label: report.ok ? "Reconciled" : "Not reconciled",
       counts: counted.join(" · "),
     },
+    total: { whole, fraction: fraction === undefined ? "" : `.${fraction}`, asset: "USDC" },
+    history: input.history === undefined ? null : history(input.history),
     holdings,
     holdingsCheck,
     mandate: {
-      recipients: mandate.allowedRecipients.map((a) => (normalise(a) === normalise(me) ? `${a} (this wallet)` : a)),
+      recipients: mandate.allowedRecipients.map((a) => ({
+        address: a,
+        label: normalise(a) === normalise(me) ? "this wallet" : "",
+      })),
       spenders: mandate.allowedSpenders.length === 0 ? "No one. Every approval is refused." : mandate.allowedSpenders.join(", "),
       limits,
     },
     // Newest first: the question on opening the page is "what just happened".
-    activity: report.rows.map((r) => activity(r, me)).reverse(),
+    activity: rows.map((r) => r.row),
+    days: byDay(rows),
+    stats: {
+      operations: String(report.rows.length),
+      matched: String(count("MATCHED")),
+      refused: String(count("REFUSED")),
+      feesPaid: group(fromWei(fees) ?? unknown),
+    },
     senders,
+    links: { faucet: FAUCET, explorer: `${EXPLORER}/address/${me}` },
     orphans: report.orphans.map(
       (o) => `Line ${o.line} records an outcome for ${short(o.record.tx_hash)}, a transaction no line records sending.`,
     ),

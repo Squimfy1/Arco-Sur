@@ -22,6 +22,8 @@ function findRoot(start: string): string {
   }
 }
 
-export const ROOT = findRoot(import.meta.dirname);
+// The desktop app runs from inside its own bundle, whose package.json is also
+// named arco-sur, so it says where the repo is instead (electron/main.js).
+export const ROOT = process.env.ARCO_SUR_ROOT ?? findRoot(import.meta.dirname);
 export const KEY_FILE = join(ROOT, ".testnet_key");
 export const LOG_FILE = join(ROOT, "evidence", "sends.jsonl");

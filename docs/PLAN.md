@@ -371,7 +371,60 @@ fits a 390 px phone (the activity table scrolls inside its own box).
 
 ---
 
+## Stage 9b · A desktop app, and the look apart from the backend  ·  DONE
+
+**Concept: the screens are a skin over data.** The backend hands over one
+typed object; how it looks is decided entirely elsewhere, and either side can
+change without the other.
+
+**Result (2026-11-21):**
+- **Desktop, no port.** Electron 44. `electron/main.js` runs the built
+  SvelteKit server inside the main process and answers the window's
+  `arco://app/…` requests by calling it directly; static files come from
+  `build/client`. Nothing listens on any port. The window is sandboxed with
+  context isolation and no Node; links to other sites open in the normal
+  browser; every permission is refused but clipboard writes; a strict CSP
+  allows only the app's own files. `npm run install-app` packages
+  `Arco-Sur.app` into ~/Applications with the repo path baked in
+  (`ARCO_SUR_ROOT`), since the bundle's own package.json is also "arco-sur".
+- **Decoupled.** `src/lib/contract.ts` is the only thing both sides share:
+  types, no code. The backend returns words, finished amounts, and meanings
+  (`tone: "ok"`, `icon: "out"`), never colours, sizes or coordinates; even
+  the balance chart arrives as 0–1 fractions that `src/lib/ui/chart.ts`
+  scales. Every colour, font and size is a variable in `src/lib/ui/theme.css`.
+- **Screens.** Portfolio (headline balance, Send / Receive / Swap / Faucet /
+  Explorer buttons, balance history, assets, latest operations), Operations
+  by day, Send, Receive with copy, Swap (switched off: no approved spender),
+  Rules (limits, who, accounting). A sidebar, and a top bar with the
+  reconcile verdict, block, Refresh and a hide-amounts eye. Dark, Inter with
+  Plex Mono numbers, a lavender accent. An original design in the
+  hardware-wallet genre: no other product's name, logo or artwork.
+- **Send's Review.** `review.ts` runs exactly the steps `execute()` runs
+  before signing (build, decode, guard, simulate) and reports each one, with
+  the estimated fee. It never reads the key's secret, signs, broadcasts or
+  logs. Live: 0.1 USDC to this wallet passes, 21000 gas, about 0.000525 USDC.
+- **Kinder to the node.** The public RPC answers 429 under load. `memo.ts`
+  keeps answers the chain can no longer change (mined transactions, receipts,
+  past balances) for as long as the app is open, and `ask()` retries a 429
+  twice with a pause.
+
+Tests: 134 offline, all passing. New: `decoupling.test.ts` (backend has no
+styling, contract has no code, frontend imports no backend code and no raw
+colour; each with a control), `review.test.ts` (an allowed payment is
+rehearsed and priced; six kinds of refusal never reach the node; the total
+limit counts past sends; a rejected rehearsal stops), `memo.test.ts` (final
+answers asked once, changeable ones every time). `view.test.ts` now renders
+every screen and traces every number on each to the backend's data. Mutation
+check: a raw colour in a component, a backend import in the UI, a colour in
+the backend, code in the contract and a sum in a template each failed its test.
+
+---
+
 ## Stage 10 · Send from the interface  ·  NEXT
+
+The Review step is built (Stage 9b): the screen already runs the guard and
+the rehearsal through the same code as the CLI. What is left is signing.
+
 
 **Concept: the UI calls the same guard.** No second code path, no duplicated
 rules.

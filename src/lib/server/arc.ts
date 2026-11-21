@@ -40,12 +40,20 @@ export class RpcError extends Error {
  * plain Error: the node was never reached.
  */
 export async function ask(method: string, params: unknown[] = [], timeoutMs = 25_000): Promise<unknown> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "User-Agent": UA },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  let res: Response;
+  // The public testnet node answers 429 when asked too much at once: it
+  // turned the request away unread. Wait and ask again, twice at most.
+  // Safe even for a broadcast: it is the same signed transaction, same nonce.
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": UA },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (res.status !== 429 || attempt === 2) break;
+    await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+  }
 
   if (!res.ok) {
     throw new Error(`${method}: HTTP ${res.status} ${res.statusText}`);

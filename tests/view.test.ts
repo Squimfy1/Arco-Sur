@@ -1,25 +1,40 @@
 /**
- * Stage 9: the view renders, it never calculates.
+ * The screens render, they never calculate.
  *
  * Three kinds of test:
- *   1. buildView turns readings into the right strings (pure, no network).
- *   2. The template contains no arithmetic and imports no logic.
- *   3. Rendered for real, every number on the page is found in the view
- *      object, so nothing on screen was computed by the template.
+ *   1. buildView turns readings into the right data (pure, no network).
+ *   2. No template contains arithmetic.
+ *   3. Every screen, rendered for real: every number on it is found in the
+ *      data the backend sent, so nothing on screen was computed by the look.
+ *
+ * tests/decoupling.test.ts checks the other rule: the look and the backend
+ * never reach into each other.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { createRawSnippet } from "svelte";
 import { render } from "svelte/server";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
+
+// The frame highlights the screen you are on, from SvelteKit's page state,
+// which only exists inside a running app. Here it says: the portfolio.
+vi.mock("$app/state", () => ({ page: { url: new URL("arco://app/") } }));
 
 import { EURC, USDC } from "../src/lib/server/contracts.ts";
 import { toWei } from "../src/lib/server/guard.ts";
 import { walletMandate } from "../src/lib/server/mandate.ts";
 import type { Report, Row } from "../src/lib/server/reconcile.ts";
-import { type View, type ViewInput, buildView, group } from "../src/lib/server/view.ts";
-import Page from "../src/routes/+page.svelte";
+import { type View, type ViewInput, buildView, dayLabel, group, history } from "../src/lib/server/view.ts";
+import { draw } from "../src/lib/ui/chart.ts";
+import Layout from "../src/routes/+layout.svelte";
+import Portfolio from "../src/routes/+page.svelte";
+import Activity from "../src/routes/activity/+page.svelte";
+import Receive from "../src/routes/receive/+page.svelte";
+import Rules from "../src/routes/rules/+page.svelte";
+import Send from "../src/routes/send/+page.svelte";
+import Swap from "../src/routes/swap/+page.svelte";
 
 const ME = "0xCbEB3dcd3A96843b0324a983658bD31393466486";
 const STRANGER = "0x1111111111111111111111111111111111111111";
@@ -95,6 +110,12 @@ function input(over: Partial<ViewInput> = {}): ViewInput {
     report,
     spent: { USDC: "0.9" },
     mandate: walletMandate(ME),
+    history: [
+      { block: 99n, wei: toWei("40") },
+      { block: 100n, wei: toWei("39.99958") },
+      { block: 100n, wei: toWei("39.99958") },
+      { block: 120n, wei: toWei("39.99916") },
+    ],
     ...over,
   };
 }
@@ -108,7 +129,8 @@ describe("buildView", () => {
 
   test("shows native USDC and other tokens, and uses USDC's token view only as a check", () => {
     const v = buildView(input());
-    expect(v.holdings.map((h) => [h.asset, h.amount])).toEqual([["USDC", "1,234.5"], ["EURC", "2.5"]]);
+    expect(v.holdings.map((h) => [h.asset, h.amount, h.badge])).toEqual([["USDC", "1,234.5", "$"], ["EURC", "2.5", "€"]]);
+    expect(v.total).toEqual({ whole: "1,234", fraction: ".5", asset: "USDC" });
     expect(v.holdingsCheck.tone).toBe("ok");
   });
 
@@ -120,7 +142,7 @@ describe("buildView", () => {
 
   test("mandate usage: used, left and the bar's width come from the server", () => {
     const [usdc, eurc] = buildView(input()).mandate.limits;
-    expect(usdc).toMatchObject({ asset: "USDC", perPayment: "1", total: "5", used: "0.9", left: "4.1", usedPercent: "18" });
+    expect(usdc).toMatchObject({ asset: "USDC", badge: "$", perPayment: "1", total: "5", used: "0.9", left: "4.1", usedPercent: "18" });
     expect(eurc).toMatchObject({ asset: "EURC", used: "0", left: "5", usedPercent: "0" });
   });
 
@@ -128,10 +150,10 @@ describe("buildView", () => {
     const v = buildView(input());
     expect(v.activity.map((a) => a.line)).toEqual(["3", "2", "1"]);
     const [approve, refused, paid] = v.activity;
-    expect(approve).toMatchObject({ kind: "Approval", amount: "unlimited", asset: "EURC" });
-    expect(refused).toMatchObject({ status: "Refused", tone: "quiet", fee: "—", txUrl: null, toLabel: "" });
+    expect(approve).toMatchObject({ kind: "Approval", amount: "unlimited", asset: "EURC", icon: "approve" });
+    expect(refused).toMatchObject({ status: "Refused", tone: "quiet", fee: "—", txUrl: null, toLabel: "", icon: "refused" });
     expect(refused?.detail).toBe("recipient not on the allowlist");
-    expect(paid).toMatchObject({ status: "Matched", tone: "ok", fee: "0.00042", detail: "block 100", toLabel: "this wallet" });
+    expect(paid).toMatchObject({ status: "Matched", tone: "ok", fee: "0.00042", detail: "block 100", toLabel: "this wallet", icon: "self" });
     expect(paid?.txUrl).toBe(`https://testnet.arcscan.app/tx/${HASH}`);
   });
 
@@ -152,12 +174,78 @@ describe("buildView", () => {
 
   test("the verdict counts what happened", () => {
     expect(buildView(input()).verdict).toEqual({ tone: "ok", label: "Reconciled", counts: "2 matched · 1 refused · 0 nonce gaps" });
+    expect(buildView(input()).stats).toEqual({ operations: "3", matched: "2", refused: "1", feesPaid: "0.00084" });
+  });
+
+  test("operations are grouped under one heading per day, newest day first", () => {
+    const base = input();
+    const at = (y: number, m: number, d: number) => new Date(y, m, d, 12).getTime() / 1000;
+    const [a, b, c] = base.report.rows;
+    const v = buildView({
+      ...base,
+      report: {
+        ...base.report,
+        rows: [
+          { ...a!, entry: { ...a!.entry, record: { ...a!.entry.record, ts: at(2026, 10, 19) } } },
+          { ...b!, entry: { ...b!.entry, record: { ...b!.entry.record, ts: at(2026, 10, 20) } } },
+          { ...c!, entry: { ...c!.entry, record: { ...c!.entry.record, ts: at(2026, 10, 20) } } },
+        ],
+      },
+    });
+    expect(v.days.map((d) => [d.label, d.rows.map((r) => r.line)])).toEqual([
+      ["Friday 20 November 2026", ["3", "2"]],
+      ["Thursday 19 November 2026", ["1"]],
+    ]);
+    expect(dayLabel(new Date(2026, 0, 4))).toBe("Sunday 4 January 2026");
+  });
+
+  test("the balance history is data: places from 0 to 1, amounts as labels", () => {
+    const h = buildView(input()).history!;
+    // Block 100 appears twice in the input; it is one point.
+    expect(h.points).toEqual([
+      { x: 0, y: 1, block: "99", balance: "40" },
+      { x: 0.0476, y: 0.5, block: "100", balance: "39.99958" },
+      { x: 1, y: 0, block: "120", balance: "39.99916" },
+    ]);
+    expect(h).toMatchObject({ high: "40", low: "39.99916", from: "block 99", to: "block 120" });
+    // A flat balance sits in the middle; one block is not a history.
+    expect(history([{ block: 1n, wei: 5n }, { block: 2n, wei: 5n }])!.points.map((p) => p.y)).toEqual([0.5, 0.5]);
+    expect(history([{ block: 1n, wei: 5n }])).toBeNull();
+    expect(buildView(input({ history: undefined })).history).toBeNull();
+  });
+
+  test("the frontend draws those places at whatever size it chooses", () => {
+    const points = buildView(input()).history!.points;
+    expect(draw(points, 600, 160).line).toBe("M0.0,12.0 H28.6 V80.0 H600.0 V148.0");
+    expect(draw(points, 100, 50, 0).line).toBe("M0.0,0.0 H4.8 V25.0 H100.0 V50.0");
+    expect(draw([], 600, 160)).toEqual({ line: "", area: "" });
+  });
+
+  test("recipients are structured, and links point at the faucet and this wallet", () => {
+    const v = buildView(input());
+    expect(v.mandate.recipients).toEqual([{ address: ME, label: "this wallet" }]);
+    expect(v.links).toEqual({ faucet: "https://faucet.circle.com", explorer: `https://testnet.arcscan.app/address/${ME}` });
   });
 });
 
-// ── the template ─────────────────────────────────────────────────────
+// ── the templates ────────────────────────────────────────────────────
 
-const TEMPLATE = readFileSync(join(import.meta.dirname, "..", "src", "routes", "+page.svelte"), "utf8");
+const ROOT = join(import.meta.dirname, "..");
+
+/** Every Svelte file that makes up the screens. */
+export function frontendFiles(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
+      const rel = join(dir, e.name);
+      if (e.isDirectory()) walk(rel);
+      else if (e.name.endsWith(".svelte")) out.push(rel);
+    }
+  };
+  walk("src/routes");
+  walk("src/lib/ui");
+  return out.sort();
+}
 
 /** The markup's {…} expressions, without the script and style blocks. */
 function expressions(source: string): string[] {
@@ -167,31 +255,32 @@ function expressions(source: string): string[] {
     .filter((e) => !e.startsWith("/"));   // {/each}, {/if}: block ends, not code
 }
 
-test("the template's expressions contain no arithmetic and no formatting", () => {
-  const exprs = expressions(TEMPLATE);
-  expect(exprs.length).toBeGreaterThan(40);
-  // Strings inside an expression may hold any character; judge only the code.
-  const code = exprs.map((e) => e.replace(/"[^"]*"/g, '""'));
-  const offenders = code.filter((e) =>
-    /[+*/%]|(?<![=!<>])-(?![>-])|\bNumber\(|BigInt|parse(Int|Float)|toFixed|toLocale|Intl\.|Math\./.test(e),
-  );
+const SUMS = /[+*/%]|(?<![=!<>])-(?![>-])|\bNumber\(|BigInt|parse(Int|Float)|toFixed|toLocale|Intl\.|Math\./;
+
+test("no template's expressions contain arithmetic or number formatting", () => {
+  const files = frontendFiles();
+  expect(files.length).toBeGreaterThanOrEqual(14);
+  let total = 0;
+  const offenders: string[] = [];
+  for (const f of files) {
+    const exprs = expressions(readFileSync(join(ROOT, f), "utf8"));
+    total += exprs.length;
+    // Strings inside an expression may hold any character; judge only the code.
+    for (const e of exprs.map((x) => x.replace(/"[^"]*"/g, '""'))) {
+      if (SUMS.test(e)) offenders.push(`${f}: ${e}`);
+    }
+  }
+  expect(total).toBeGreaterThan(150);
   expect(offenders).toEqual([]);
 });
 
 test("the checker would catch arithmetic if someone added it", () => {
   // Control for the test above: same rule, on expressions that do sums.
   const bad = ["l.used + 1", "a.fee * 2", "Number(b.now)", "b.start - b.fees"];
-  const caught = bad.filter((e) => /[+*/%]|(?<![=!<>])-(?![>-])|\bNumber\(/.test(e));
-  expect(caught).toEqual(bad);
+  expect(bad.filter((e) => SUMS.test(e))).toEqual(bad);
 });
 
-test("the template imports nothing but its own types", () => {
-  const script = TEMPLATE.match(/<script[^>]*>([\s\S]*?)<\/script>/)?.[1] ?? "";
-  const imports = [...script.matchAll(/^\s*import\s.*$/gm)].map((m) => m[0].trim());
-  expect(imports).toEqual(['import type { PageProps } from "./$types";']);
-});
-
-// ── the rendered page ────────────────────────────────────────────────
+// ── every screen, rendered ───────────────────────────────────────────
 
 /** Visible text: tags and the head removed. */
 function visibleText(html: string): string {
@@ -199,31 +288,51 @@ function visibleText(html: string): string {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ");
 }
 
-/** Numbers on screen that appear nowhere in the view object. */
-function untraced(text: string, view: View): string[] {
-  const source = JSON.stringify(view);
+/** Numbers on screen that appear nowhere in the data the backend sent. */
+function untraced(text: string, data: unknown): string[] {
+  const source = JSON.stringify(data);
   return [...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((m) => m[0]).filter((n) => !source.includes(n));
 }
 
-test("every number on the rendered page traces to a value in the view", () => {
-  const view = buildView(input());
-  const { body } = render(Page, { props: { data: view } as never });
-  const text = visibleText(body);
+const REVIEW = {
+  review: {
+    tone: "ok" as const,
+    title: "Ready to sign",
+    steps: [
+      { label: "Mandate", tone: "ok" as const, text: "0.1 USDC to me is within the rules" },
+      { label: "Rehearsal", tone: "ok" as const, text: "the node accepts it: 21000 gas, fee about 0.000525 USDC" },
+    ],
+    form: { to: ME, amount: "0.1", asset: "USDC" },
+  },
+};
 
-  // It really rendered the data.
-  expect(text).toContain("1,234.5");
-  expect(text).toContain("Reconciled");
-  expect(text).toContain("39.99916");
+const children = createRawSnippet(() => ({ render: () => "<p>screen</p>" }));
 
-  const numbers = [...text.matchAll(/\d[\d,]*(?:\.\d+)?/g)];
-  expect(numbers.length).toBeGreaterThan(20);
-  expect(untraced(text, view)).toEqual([]);
-});
+const SCREENS = [
+  { name: "frame", component: Layout, props: { children }, expect: ["Reconciled", "73234459", "Portfolio", "Swap"] },
+  { name: "portfolio", component: Portfolio, props: {}, expect: ["1,234", ".5", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
+  { name: "operations", component: Activity, props: {}, expect: ["Approval", "unlimited", "recipient not on the allowlist"] },
+  { name: "send", component: Send, props: { form: REVIEW }, expect: ["Review", "4.1", "Ready to sign", "21000", "Sign and send"] },
+  { name: "receive", component: Receive, props: {}, expect: [ME, "Copy address"] },
+  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "not switched on"] },
+  { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced"] },
+] as const;
 
-test("control: a number the view never contained is reported", () => {
+for (const s of SCREENS) {
+  test(`${s.name}: renders, and every number on it traces to the backend's data`, () => {
+    const view = buildView(input());
+    const { body } = render(s.component as never, { props: { data: view, ...s.props } as never });
+    const text = visibleText(body);
+    for (const e of s.expect) expect(text).toContain(e);
+    expect(untraced(text, { view, ...s.props })).toEqual([]);
+  });
+}
+
+test("control: a number the data never contained is reported", () => {
   const view = buildView(input());
   expect(untraced("balance 1,234.5 and 987654.321", view)).toEqual(["987654.321"]);
 });

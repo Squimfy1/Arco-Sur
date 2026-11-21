@@ -1,7 +1,10 @@
 {
   "name": "arco-sur",
+  "version": "0.10.0",
+  "description": "A testnet wallet for Arc that checks every payment before signing it.",
   "private": true,
   "type": "module",
+  "main": "electron/main.js",
   "engines": {
     "node": ">=24"
   },
@@ -9,7 +12,11 @@
     "#lib/*": "./src/lib/*"
   },
   "scripts": {
-    "app": "vite dev",
+    "app": "vite build && env -u ELECTRON_RUN_AS_NODE electron .",
+    "build": "vite build",
+    "dev": "vite dev",
+    "package": "vite build && electron-builder --mac dir --publish never -c.extraMetadata.arcoSurRoot=\"$PWD\"",
+    "install-app": "npm run package && rm -rf ~/Applications/Arco-Sur.app && mkdir -p ~/Applications && cp -R dist/mac-arm64/Arco-Sur.app ~/Applications/",
     "test": "vitest run",
     "typecheck": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "send": "node src/lib/server/send.ts",
@@ -17,19 +24,41 @@
     "balances": "node src/lib/server/read.ts"
   },
   "dependencies": {
-    "@fontsource/ibm-plex-mono": "5.3.0",
-    "@fontsource/ibm-plex-sans": "5.3.0",
     "viem": "2.58.2"
   },
   "devDependencies": {
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/inter": "5.3.0",
     "@sveltejs/adapter-node": "6.0.2",
     "@sveltejs/kit": "3.2.0",
     "@sveltejs/vite-plugin-svelte": "7.3.1",
     "@types/node": "26.6.6",
+    "electron": "44.10.2",
+    "electron-builder": "26.18.1",
     "svelte": "5.57.3",
     "svelte-check": "4.7.8",
     "typescript": "6.0.3",
     "vite": "8.3.8",
     "vitest": "5.1.1"
+  },
+  "build": {
+    "appId": "app.arco-sur.wallet",
+    "productName": "Arco-Sur",
+    "directories": {
+      "output": "dist",
+      "buildResources": "electron/resources"
+    },
+    "files": [
+      "electron/main.js",
+      "build/**",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "identity": null,
+      "target": "dir",
+      "icon": "electron/resources/icon.png"
+    }
   }
 }

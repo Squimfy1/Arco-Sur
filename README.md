@@ -9,7 +9,7 @@ Written in TypeScript. The last Python version is kept at the git tag
 ## Layout
 
 ```
-src/lib/server/   the backend; never sent to the browser
+src/lib/server/   the backend: reads the chain and the log, holds the key
   arc.ts          talks to the Arc chain (RPC client)
   account.ts      loads the throwaway testnet key
   paths.ts        where the key and the evidence log live
@@ -22,11 +22,16 @@ src/lib/server/   the backend; never sent to the browser
   reconcile.ts    checks the evidence log against the chain
   contracts.ts    the Arc contracts a user needs: address + ABI
   read.ts         reads any of them with eth_call (no gas, no signing)
-  view.ts         turns chain + log readings into the page's strings
-src/routes/       the web page (SvelteKit)
-  +page.server.ts reads the chain and the log, on the server
-  +page.svelte    shows the result; does no arithmetic
-tests/      offline tests: guard, intents, refusals, reconciliation, reads, view
+  view.ts         turns chain + log readings into the screens' data
+  review.ts       the Send screen's Review: guard + rehearsal, never signs
+  memo.ts         remembers chain answers that can no longer change
+src/lib/contract.ts  the data the backend hands the screens; types only
+src/lib/ui/       the look: theme.css (every colour and size), icons, components
+src/routes/       the screens (SvelteKit): Portfolio, Operations, Send,
+                  Receive, Swap, Rules; +layout.server.ts reads for all of them
+electron/         the desktop app: main.js runs the screens with no network port
+tests/      offline tests: guard, intents, refusals, reconciliation, reads,
+            screens, review, and that the look and the backend stay apart
 docs/       PLAN.md (the staged build plan) and notes/
 evidence/   sends.jsonl, one line per send, never rewritten
 scratch/    early experiments, not used by the code
@@ -75,15 +80,39 @@ npm run balances -- --address 0x…    # for any address
 Decimals are read from each token, never assumed. An address with no
 contract is refused, never shown as a zero balance.
 
+### The desktop app
+
 ```
-npm run app        # the wallet page, at http://127.0.0.1:5173
+npm run install-app   # builds Arco-Sur.app and puts it in ~/Applications
+npm run app           # or: build and open it straight from the repo
 ```
 
-A read-only page: holdings, the mandate and how much of it is used, every
-logged send and refusal checked against the chain, and the accounting
-statement. It reads everything on the server at each load; "Read again"
-reloads. It listens on 127.0.0.1 only and is never meant to be deployed: its
-server side holds the key.
+A desktop wallet in the style of a hardware-wallet companion app: Portfolio
+(balance, balance history, assets, latest operations), Operations (every
+send and refusal, by day, checked against the chain), Send, Receive, Swap and
+Rules (the limits, how much is used, and the accounting). The top bar shows
+whether the log reconciles, re-reads on Refresh, and the eye hides every
+amount.
+
+- **Send** checks a payment against the rules and rehearses it on the node,
+  then shows the fee. It does not sign yet (Stage 10): `npm run send` does.
+- **Swap** is laid out but switched off: the rules approve no one.
+- **Faucet** and **Explorer** open in your normal browser.
+
+Nothing listens on a network port, not even localhost: the window asks the
+app for `arco://app/…`, and the app answers inside its own process. The
+window has no access to Node, files or the key. The packaged app reads the
+key and the log from this repo, whose path is recorded when it is built, so
+rebuild it with `npm run install-app` after moving the repo.
+
+**Changing the look.** Every colour, font and size is in
+`src/lib/ui/theme.css`; components use only its variables. The backend sends
+data only, typed in `src/lib/contract.ts`. `tests/decoupling.test.ts` fails
+if the backend ever mentions a colour or a class, or a screen imports
+backend code.
+
+`npm run dev` serves the screens at http://127.0.0.1:5173 with hot reload,
+for working on the look.
 
 `account.ts` reads a throwaway testnet private key from `.testnet_key` in the
 repo root. That file is gitignored. Never put a key holding real funds there.
