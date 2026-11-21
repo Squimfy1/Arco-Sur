@@ -192,7 +192,7 @@
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
-    background: var(--usd);
+    background: var(--accent);
   }
 
   .acct-text {

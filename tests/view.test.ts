@@ -348,3 +348,11 @@ test("control: a number the data never contained is reported", () => {
   const view = buildView(input());
   expect(untraced("balance 1,234.5 and 987654.321", view)).toEqual(["987654.321"]);
 });
+
+test("coins with an official logo show it; any other asset keeps its glyph", () => {
+  const view = buildView(input());
+  const { body } = render(Swap as never, { props: { data: view } as never });
+  expect(body).toMatch(/<img[^>]+src="[^"]*usdc[^"]*\.svg"/);
+  expect(body).toMatch(/<img[^>]+src="[^"]*eurc[^"]*\.svg"/);
+  expect(body).not.toMatch(/class="badge glyph[^"]*"[^>]*>\$</);
+});
