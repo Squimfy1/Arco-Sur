@@ -10,3 +10,15 @@ build/
 
 # The packaged desktop app. Rebuild it with: npm run package
 dist/
+
+# The balance history read from the chain. Rebuilt from the chain if deleted.
+cache/
+
+# This computer's monthly limits, set on the Settings screen.
+settings/
+
+# Screenshots of other sites, for local design comparison only.
+scratch/design-options/refs/
+
+# Python bytecode from the scratch design scripts.
+__pycache__/

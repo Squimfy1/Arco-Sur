@@ -149,7 +149,8 @@ export function check(
     amountUsdc,
     chainId,
     alreadySentUsdc = "0",
-  }: { to: unknown; amountUsdc: unknown; chainId: number; alreadySentUsdc?: string },
+    sender,
+  }: { to: unknown; amountUsdc: unknown; chainId: number; alreadySentUsdc?: string; sender?: unknown },
 ): Verdict {
   const dest = normalise(to);
   if (dest === null) {
@@ -190,6 +191,11 @@ export function check(
     );
   }
 
+  // Money paid to yourself never leaves the wallet: it does not use the total.
+  if (dest === normalise(sender)) {
+    return allow(SELF);
+  }
+
   const running = toWei(alreadySentUsdc) + amount;
   if (running > toWei(mandate.maxTotalUsdc)) {
     return refuse(
@@ -201,6 +207,8 @@ export function check(
   return allow("within mandate");
 }
 
+const SELF = "within mandate; to this wallet itself, so it does not count toward the total";
+
 // --- any transaction: judged on what it decodes to --------------------------
 
 /** What a transaction actually does, decoded from its bytes by intent.ts. */
@@ -208,7 +216,23 @@ export type Intent =
   | { kind: "native"; to: string; amount: bigint }                    // amount in wei
   | { kind: "transfer"; token: string; to: string; amount: bigint }   // token base units
   | { kind: "approve"; token: string; spender: string; amount: bigint }
+  | Swap
   | { kind: "unknown"; reason: string };
+
+/**
+ * A swap through an approved swap contract, decoded from its call: what goes
+ * in (taken through the approval made just before), what should come out,
+ * and every address the contract will pay. Amounts in token base units.
+ */
+export type Swap = {
+  kind: "swap";
+  via: string;
+  tokenIn: string;
+  amountIn: bigint;
+  tokenOut: string;
+  minOut: bigint;
+  beneficiaries: string[];
+};
 
 /** Totals already sent, per asset symbol, as decimal strings. */
 export type Spent = Readonly<Record<string, string>>;
@@ -223,7 +247,7 @@ export type Spent = Readonly<Record<string, string>>;
 export function checkIntent(
   mandate: Mandate,
   intent: Intent,
-  { chainId, decimals, alreadySent = {} }: { chainId: number; decimals?: number; alreadySent?: Spent },
+  { chainId, decimals, alreadySent = {}, sender }: { chainId: number; decimals?: number; alreadySent?: Spent; sender?: string },
 ): Verdict {
   if (intent.kind === "unknown") {
     return refuse(`not a payment this guard understands: ${intent.reason}`);
@@ -235,7 +259,15 @@ export function checkIntent(
       amountUsdc: fromWei(intent.amount),
       chainId,
       alreadySentUsdc: alreadySent.USDC ?? "0",
+      sender,
     });
+  }
+
+  if (intent.kind === "swap") {
+    if (chainId !== mandate.chainId) {
+      return refuse(`wrong chain: transaction is for ${chainId}, mandate permits ${mandate.chainId}`);
+    }
+    return checkSwap(mandate, intent, sender);
   }
 
   if (chainId !== mandate.chainId) {
@@ -278,6 +310,7 @@ export function checkIntent(
       amountUsdc: fromUnits(intent.amount, decimals),
       chainId,
       alreadySentUsdc: alreadySent.USDC ?? "0",
+      sender,
     });
   }
 
@@ -305,6 +338,9 @@ export function checkIntent(
     return refuse(
       `amount ${fromUnits(intent.amount, decimals)} ${rule.symbol} exceeds per-payment limit ${rule.maxAmount}`,
     );
+  }
+  if (dest === normalise(sender)) {
+    return allow(SELF);
   }
   const running = toUnits(alreadySent[rule.symbol] ?? "0", decimals) + intent.amount;
   if (running > toUnits(rule.maxTotal, decimals)) {
@@ -350,6 +386,58 @@ function checkApprove(
     return refuse(`approval would take ${limit.symbol} past its total limit ${limit.maxTotal}`);
   }
   return allow("within mandate");
+}
+
+/**
+ * A swap: only through an allowed spender, only between assets the mandate
+ * knows, never more than one payment's worth in, and every token it pays
+ * out goes to this wallet. The total is not checked here: the approval just
+ * before the swap already counted the amount against it, and the swap
+ * contract cannot take more than that approval.
+ */
+function checkSwap(mandate: Mandate, swap: Swap, sender: string | undefined): Verdict {
+  const via = normalise(swap.via);
+  if (via === null || !new Set(mandate.allowedSpenders.map(normalise)).has(via)) {
+    return refuse(`swap contract not allowed: ${swap.via}`);
+  }
+  const me = normalise(sender);
+  if (me === null) {
+    return refuse("a swap must name the wallet it pays back to");
+  }
+  const strangers = swap.beneficiaries.filter((b) => normalise(b) !== me);
+  if (swap.beneficiaries.length === 0 || strangers.length > 0) {
+    return refuse(`the swap would pay someone else: ${strangers.join(", ") || "no one named"}`);
+  }
+  const limitOf = (token: string) => {
+    const t = normalise(token);
+    if (t === ARC_USDC_TOKEN) {
+      return { symbol: "USDC", decimals: ARC_USDC_TOKEN_DECIMALS, maxAmount: mandate.maxAmountUsdc };
+    }
+    return mandate.tokens.find((r) => normalise(r.address) === t);
+  };
+  const tokenIn = limitOf(swap.tokenIn);
+  const tokenOut = limitOf(swap.tokenOut);
+  if (tokenIn === undefined) {
+    return refuse(`swap from a token not in the mandate: ${swap.tokenIn}`);
+  }
+  if (tokenOut === undefined) {
+    return refuse(`swap into a token not in the mandate: ${swap.tokenOut}`);
+  }
+  if (tokenIn.symbol === tokenOut.symbol) {
+    return refuse(`a swap from ${tokenIn.symbol} to itself`);
+  }
+  if (swap.amountIn <= 0n) {
+    return refuse("swap amount must be positive");
+  }
+  if (swap.amountIn > toUnits(tokenIn.maxAmount, tokenIn.decimals)) {
+    return refuse(
+      `swap of ${fromUnits(swap.amountIn, tokenIn.decimals)} ${tokenIn.symbol} exceeds the per-payment limit ${tokenIn.maxAmount}`,
+    );
+  }
+  if (swap.minOut <= 0n) {
+    return refuse("the swap guarantees nothing back (minimum out is 0)");
+  }
+  return allow("within mandate; pays back only to this wallet");
 }
 
 // --- units ---------------------------------------------------------------------

@@ -17,10 +17,11 @@ import * as arc from "#lib/server/arc.ts";
 import { TOKENS } from "#lib/server/contracts.ts";
 import { walletMandate } from "#lib/server/mandate.ts";
 import { remembering } from "#lib/server/memo.ts";
-import { LOG_FILE } from "#lib/server/paths.ts";
+import { LOG_FILE, TIMELINE_FILE } from "#lib/server/paths.ts";
 import { tokenBalance } from "#lib/server/read.ts";
 import { type Report, readLog, reconcile } from "#lib/server/reconcile.ts";
 import { alreadySent } from "#lib/server/send.ts";
+import { type Change, extend, load as loadTimeline, save as saveTimeline } from "#lib/server/timeline.ts";
 import { buildView } from "#lib/server/view.ts";
 
 import type { LayoutServerLoad } from "./$types";
@@ -28,14 +29,24 @@ import type { LayoutServerLoad } from "./$types";
 // One per server process: in the desktop app, for as long as it is open.
 const chain = remembering(arc);
 
-/** The native balance where it changed: before the first send, after each mined one, and now. */
-async function balanceHistory(me: string, report: Report, now: bigint | null) {
-  const blocks = new Set<bigint>();
-  for (const s of report.senders) if (s.balance !== null) blocks.add(s.balance.startBlock);
-  for (const r of report.rows) if (r.block !== null) blocks.add(r.block);
-  if (now !== null) blocks.add(now);
-  const read = await Promise.all([...blocks].map(async (block) => ({ block, wei: await chain.balanceAt(me, block) })));
-  return read.filter((p): p is { block: bigint; wei: bigint } => p.wei !== null);
+// The balance history, read from the chain and kept on disk. One reading at
+// a time per process: a second screen asking meanwhile waits for the first.
+let timeline = loadTimeline(TIMELINE_FILE);
+let reading: Promise<Change[]> | null = null;
+
+/** Every change of the native balance up to `head`, looking at the log's own blocks too. */
+function balanceHistory(me: string, report: Report, head: bigint | null): Promise<Change[]> {
+  if (head === null) return Promise.resolve(timeline?.changes ?? []);
+  reading ??= (async () => {
+    const always = report.rows.flatMap((r) => (r.block === null ? [] : [r.block]));
+    const next = await extend({ balanceAt: (a, b) => chain.balanceAt(a, b), blockTime: arc.blockTime }, me, timeline, head, always);
+    if (next !== timeline) {
+      timeline = next;
+      saveTimeline(TIMELINE_FILE, next);
+    }
+    return next.changes;
+  })().finally(() => (reading = null));
+  return reading;
 }
 
 export const load: LayoutServerLoad = async () => {
@@ -64,7 +75,7 @@ export const load: LayoutServerLoad = async () => {
       report,
       spent: alreadySent(me),
       mandate: walletMandate(me),
-      history: await balanceHistory(me, report, block),
+      timeline: await balanceHistory(me, report, block),
     });
   } catch (e) {
     if (e instanceof arc.RpcError) {

@@ -2,13 +2,14 @@
   // The round coin mark beside an asset: the issuer's official logo for the
   // coins that have one here (src/lib/ui/coins), otherwise the character the
   // backend sends ($, €) on a plain disc.
+  import cirbtc from "./coins/cirbtc.svg";
   import eurc from "./coins/eurc.svg";
   import usdc from "./coins/usdc.svg";
   import usdt from "./coins/usdt.svg";
 
   let { asset, badge, size = "2.25rem" }: { asset: string; badge: string; size?: string } = $props();
 
-  const LOGOS: Record<string, string> = { USDC: usdc, EURC: eurc, USDT: usdt };
+  const LOGOS: Record<string, string> = { USDC: usdc, EURC: eurc, USDT: usdt, cirBTC: cirbtc };
   const logo = $derived(LOGOS[asset]);
 </script>
 

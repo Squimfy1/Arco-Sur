@@ -24,21 +24,26 @@ vi.mock("$app/state", () => ({ page: { url: new URL("arco://app/") } }));
 
 import { EURC, USDC } from "../src/lib/server/contracts.ts";
 import { toWei } from "../src/lib/server/guard.ts";
+import { DEFAULTS } from "../src/lib/server/limits.ts";
 import { walletMandate } from "../src/lib/server/mandate.ts";
 import type { Report, Row } from "../src/lib/server/reconcile.ts";
 import { type View, type ViewInput, buildView, cut, dayLabel, group, history } from "../src/lib/server/view.ts";
-import { draw } from "../src/lib/ui/chart.ts";
+import { at, draw, percent } from "../src/lib/ui/chart.ts";
 import Layout from "../src/routes/+layout.svelte";
-import Portfolio from "../src/routes/+page.svelte";
+import Portfolio from "../src/routes/portfolio/+page.svelte";
 import Activity from "../src/routes/activity/+page.svelte";
 import Receive from "../src/routes/receive/+page.svelte";
 import Rules from "../src/routes/rules/+page.svelte";
 import Send from "../src/routes/send/+page.svelte";
+import Settings from "../src/routes/settings/+page.svelte";
 import Swap from "../src/routes/swap/+page.svelte";
 
 const ME = "0xCbEB3dcd3A96843b0324a983658bD31393466486";
 const STRANGER = "0x1111111111111111111111111111111111111111";
 const HASH = `0x${"ab".repeat(32)}`;
+// The moment the fixture is read (its readAt), in seconds, for the balance timeline.
+const NOW = BigInt(new Date(2026, 10, 20, 14, 3, 12).getTime() / 1000);
+const DAY = 86_400n;
 
 function row(line: number, over: Partial<Row> & { record?: Partial<Row["entry"]["record"]> }): Row {
   const { record, ...rest } = over;
@@ -109,12 +114,11 @@ function input(over: Partial<ViewInput> = {}): ViewInput {
     ],
     report,
     spent: { USDC: "0.9" },
-    mandate: walletMandate(ME),
-    history: [
-      { block: 99n, wei: toWei("40") },
-      { block: 100n, wei: toWei("39.99958") },
-      { block: 100n, wei: toWei("39.99958") },
-      { block: 120n, wei: toWei("39.99916") },
+    mandate: walletMandate(ME, DEFAULTS),
+    timeline: [
+      { block: 99n, wei: toWei("40"), time: NOW - 10n * DAY },
+      { block: 100n, wei: toWei("39.99958"), time: NOW - 2n * DAY },
+      { block: 120n, wei: toWei("39.99916"), time: NOW - 3600n },
     ],
     ...over,
   };
@@ -154,8 +158,8 @@ describe("buildView", () => {
 
   test("mandate usage: used, left and the bar's width come from the server", () => {
     const [usdc, eurc] = buildView(input()).mandate.limits;
-    expect(usdc).toMatchObject({ asset: "USDC", badge: "$", perPayment: "1", total: "5", used: "0.9", left: "4.1", usedPercent: "18" });
-    expect(eurc).toMatchObject({ asset: "EURC", used: "0", left: "5", usedPercent: "0" });
+    expect(usdc).toMatchObject({ asset: "USDC", name: "USD Coin", badge: "$", perPayment: "1", total: "5", used: "0.9", left: "4.1", usedPercent: "18" });
+    expect(eurc).toMatchObject({ asset: "EURC", name: "Euro Coin", used: "0", left: "5", usedPercent: "0" });
   });
 
   test("activity is newest first, with refusals quiet and unbounded amounts named", () => {
@@ -185,7 +189,7 @@ describe("buildView", () => {
   });
 
   test("the verdict counts what happened", () => {
-    expect(buildView(input()).verdict).toEqual({ tone: "ok", label: "Reconciled", counts: "2 matched · 1 refused · 0 nonce gaps" });
+    expect(buildView(input()).verdict).toEqual({ tone: "ok", label: "Reconciled", counts: "2 matched, 1 refused, 0 nonce gaps" });
     expect(buildView(input()).stats).toEqual({ operations: "3", matched: "2", refused: "1", feesPaid: "0.00084" });
   });
 
@@ -211,26 +215,48 @@ describe("buildView", () => {
     expect(dayLabel(new Date(2026, 0, 4))).toBe("Sunday 4 January 2026");
   });
 
-  test("the balance history is data: places from 0 to 1, amounts as labels", () => {
+  test("the balance history is data: one series per range, places from 0 to 1, amounts as labels", () => {
     const h = buildView(input()).history!;
-    // Block 100 appears twice in the input; it is one point.
-    expect(h.points).toEqual([
-      { x: 0, y: 1, block: "99", balance: "40" },
-      { x: 0.0476, y: 0.5, block: "100", balance: "39.99958" },
-      { x: 1, y: 0, block: "120", balance: "39.99916" },
-    ]);
-    expect(h).toMatchObject({ high: "40", low: "39.99916", from: "block 99", to: "block 120" });
-    // A flat balance sits in the middle; one block is not a history.
-    expect(history([{ block: 1n, wei: 5n }, { block: 2n, wei: 5n }])!.points.map((p) => p.y)).toEqual([0.5, 0.5]);
-    expect(history([{ block: 1n, wei: 5n }])).toBeNull();
-    expect(buildView(input({ history: undefined })).history).toBeNull();
+    expect(h.ranges.map((r) => r.id)).toEqual(["1D", "1W", "1M", "1Y", "All"]);
+
+    // All: from nothing at the first funding, every change, then the balance now.
+    const all = h.ranges.at(-1)!;
+    expect(all.points.map((p) => p.balance)).toEqual(["0", "40", "39.99958", "39.99916", "1,234.5"]);
+    expect(all.points.map((p) => p.x)).toEqual([0, 0, 0.8, 0.9958, 1]);
+    expect(all).toMatchObject({ high: { balance: "1,234.5", x: 1, y: 1 }, low: { balance: "0", x: 0, y: 0 }, change: "+1,234.50 USDC", tone: "ok" });
+
+    // 1D opens with the balance held a day ago, then the change an hour ago.
+    const day = h.ranges[0]!;
+    expect(day.points.map((p) => p.balance)).toEqual(["39.99958", "39.99916", "1,234.5"]);
+    expect(day.from).toBe("2026-11-19");
+    expect(day.to).toBe("2026-11-20");
+
+    // A wallet younger than a range starts that range when it was funded.
+    expect(h.ranges[3]!.points).toEqual(all.points);
+  });
+
+  test("a flat balance sits in the middle; no funding is no history", () => {
+    const now = new Date(Number(NOW) * 1000);
+    const flat = history([{ block: 1n, wei: 5n, time: NOW - 2n * DAY }], 5n, now)!.ranges[0]!;
+    expect(flat.points.map((p) => p.y)).toEqual([0.5, 0.5]);
+    expect(flat).toMatchObject({ change: "No change", tone: "quiet" });
+    // The change reads to two decimals, cut; less than a cent says so.
+    const fee = history([{ block: 1n, wei: 5n * 10n ** 18n, time: NOW - 2n * DAY }], 5n * 10n ** 18n - 420_000_000_000_000n, now)!;
+    expect(fee.ranges[0]!.change).toBe("−<0.01 USDC");
+    expect(history([], 5n, now)).toBeNull();
+    expect(history([{ block: 1n, wei: 0n, time: NOW }], 0n, now)).toBeNull();
+    expect(buildView(input({ timeline: undefined })).history).toBeNull();
   });
 
   test("the frontend draws those places at whatever size it chooses", () => {
-    const points = buildView(input()).history!.points;
+    const points = [{ x: 0, y: 1 }, { x: 0.0476, y: 0.5 }, { x: 1, y: 0 }];
     expect(draw(points, 600, 160).line).toBe("M0.0,12.0 H28.6 V80.0 H600.0 V148.0");
     expect(draw(points, 100, 50, 0).line).toBe("M0.0,0.0 H4.8 V25.0 H100.0 V50.0");
     expect(draw([], 600, 160)).toEqual({ line: "", area: "" });
+    // The hover reads the step it is over; labels stay off the very edges.
+    expect([0, 0.04, 0.5, 1].map((fx) => at(points, fx))).toEqual([0, 0, 1, 2]);
+    expect(percent({ x: 0.5, y: 0.5 }, 100, 0)).toEqual({ left: "50.00%", top: "50.00%" });
+    expect(percent({ x: 1, y: 1 }, 100, 0, 4).left).toBe("96.00%");
   });
 
   test("recipients are structured, and links point at the faucet and this wallet", () => {
@@ -313,26 +339,35 @@ function untraced(text: string, data: unknown): string[] {
 const REVIEW = {
   review: {
     tone: "ok" as const,
-    title: "Ready to sign",
+    title: "Ready to Sign",
     steps: [
       { label: "Mandate", tone: "ok" as const, text: "0.1 USDC to me is within the rules" },
       { label: "Rehearsal", tone: "ok" as const, text: "the node accepts it: 21000 gas, fee about 0.000525 USDC" },
     ],
     form: { to: ME, amount: "0.1", asset: "USDC" },
+    quote: { amount: "0.1 USDC", to: "This Wallet", fee: "about 0.000525 USDC", total: "0.100525 USDC", after: "1,234.39 USDC" },
   },
 };
 
 const children = createRawSnippet(() => ({ render: () => "<p>screen</p>" }));
 
 const SCREENS = [
-  { name: "frame", component: Layout, props: { children }, expect: ["Reconciled", "73234459", "Portfolio", "Swap"] },
+  { name: "frame", component: Layout, props: { children }, expect: ["Cathedral", "Testnet Wallet", "Portfolio", "Swap", "not affiliated with or endorsed by Circle", "Arc™ is a trademark of Circle Internet Group, Inc."] },
   { name: "portfolio", component: Portfolio, props: {}, expect: ["1,234", ".5", "Send", "Receive", "Swap", "Faucet", "Explorer", "Euro Coin"] },
-  { name: "operations", component: Activity, props: {}, expect: ["Approval", "unlimited", "recipient not on the allowlist"] },
-  { name: "send", component: Send, props: { form: REVIEW }, expect: ["Review", "4.1", "Ready to sign", "21000", "Sign and send"] },
-  { name: "receive", component: Receive, props: {}, expect: [ME, "Copy address"] },
-  { name: "swap", component: Swap, props: {}, expect: ["No one. Every approval is refused.", "not switched on"] },
+  { name: "operations", component: Activity, props: {}, expect: ["Approval", "unlimited", "recipient not on the allowlist", "Filter", "All Operations"] },
+  { name: "send", component: Send, props: { form: REVIEW }, expect: ["Review", "Ready to Sign", "about 0.000525 USDC", "0.100525 USDC", "This Wallet"] },
+  { name: "receive", component: Receive, props: {}, expect: [ME, "Copy Address"] },
+  { name: "swap", component: Swap, props: {}, expect: ["Get Quote", "From", "To", "USD Coin"] },
   { name: "rules", component: Rules, props: {}, expect: ["0.9", "4.1", "39.99916", "Balanced"] },
+  { name: "settings", component: Settings, props: {}, expect: ["Appearance", "Dark", "Light", "Match System", "Text Size", "Hide Amounts"] },
 ] as const;
+
+test("the menu starts at Home and lists Operations just above Rules, and Settings sits by the network line", () => {
+  const { body } = render(Layout as never, { props: { data: buildView(input()), children } as never });
+  const menu = [...visibleText(body).matchAll(/Home|Portfolio|Send|Receive|Swap|Operations|Rules/g)].map((m) => m[0]);
+  expect(menu.slice(0, 7)).toEqual(["Home", "Portfolio", "Send", "Receive", "Swap", "Operations", "Rules"]);
+  expect(body).toMatch(/<a[^>]+href="\/settings"[^>]+aria-label="Settings"/);
+});
 
 for (const s of SCREENS) {
   test(`${s.name}: renders, and every number on it traces to the backend's data`, () => {
@@ -343,6 +378,19 @@ for (const s of SCREENS) {
     expect(untraced(text, { view, ...s.props })).toEqual([]);
   });
 }
+
+test("a passed review shows the quote and Send, not the guard's workings", () => {
+  const { body } = render(Send as never, { props: { data: buildView(input()), form: REVIEW } as never });
+  const text = visibleText(body);
+  expect(text).toContain("Balance After");
+  for (const gone of ["GUARD", "Mandate", "Rehearsal", "21000 gas"]) expect(text).not.toContain(gone);
+});
+
+test("a refused review says why, in one line", () => {
+  const refused = { review: { tone: "bad" as const, title: "The Wallet Would Refuse This", steps: [{ label: "Mandate", tone: "bad" as const, text: "recipient not on the allowlist" }], form: { to: STRANGER, amount: "0.1", asset: "USDC" } } };
+  const { body } = render(Send as never, { props: { data: buildView(input()), form: refused } as never });
+  expect(visibleText(body)).toContain("Mandate: recipient not on the allowlist");
+});
 
 test("control: a number the data never contained is reported", () => {
   const view = buildView(input());
@@ -355,4 +403,43 @@ test("coins with an official logo show it; any other asset keeps its glyph", () 
   expect(body).toMatch(/<img[^>]+src="[^"]*usdc[^"]*\.svg"/);
   expect(body).toMatch(/<img[^>]+src="[^"]*eurc[^"]*\.svg"/);
   expect(body).not.toMatch(/class="badge glyph[^"]*"[^>]*>\$</);
+});
+
+test("send: the asset picker shows the chosen coin's logo and name, and posts it with the form", () => {
+  const view = buildView(input());
+  const { body } = render(Send as never, { props: { data: view, form: { review: { ...REVIEW.review, form: { ...REVIEW.review.form, asset: "EURC" } } } } as never });
+  expect(body).not.toContain("<select");
+  expect(body).toMatch(/<input type="hidden" name="asset" value="EURC"/);
+  expect(body).toMatch(/aria-haspopup="listbox"[\s\S]*?<img[^>]+src="[^"]*eurc[^"]*\.svg"[\s\S]*?Euro Coin/);
+});
+
+test("cirBTC is a sendable asset with its own name, logo and Bitcoin's 8 decimals", () => {
+  const limits = buildView(input()).mandate.limits;
+  expect(limits.map((l) => l.asset)).toEqual(["USDC", "EURC", "cirBTC"]);
+  expect(limits[2]).toMatchObject({ name: "Circle Wrapped Bitcoin", badge: "₿", perPayment: "0.0001", total: "0.0005", left: "0.0005" });
+  const chosen = { review: { ...REVIEW.review, form: { ...REVIEW.review.form, asset: "cirBTC" } } };
+  const { body } = render(Send as never, { props: { data: buildView(input()), form: chosen } as never });
+  expect(body).toMatch(/<input type="hidden" name="asset" value="cirBTC"/);
+});
+
+test("Max is the least of what is held (less a fee reserve for USDC), the per-payment limit and what is left", () => {
+  const big = buildView(input()).mandate.limits;
+  expect(big.map((l) => [l.asset, l.available, l.max])).toEqual([
+    ["USDC", "1234.5", "1"], // the per-payment limit is the least
+    ["EURC", "2.5", "1"],
+    ["cirBTC", "", ""], // not read: no Max
+  ]);
+  const small = buildView(input({ nativeWei: toWei("0.3") })).mandate.limits[0]!;
+  expect(small.max).toBe("0.29"); // what is held, less 0.01 for the fee
+  expect(buildView(input({ nativeWei: toWei("0.005") })).mandate.limits[0]!.max).toBe("0");
+});
+
+test("send: no limit text, typed or not; the balance panel shows what is held", () => {
+  const empty = visibleText(render(Send as never, { props: { data: buildView(input()), form: null } as never }).body);
+  expect(empty).toContain("Balance");
+  expect(empty).toContain("1,234.5");
+  expect(empty).not.toContain("per payment");
+  const typed = visibleText(render(Send as never, { props: { data: buildView(input()), form: REVIEW } as never }).body);
+  expect(typed).not.toContain("per payment");
+  expect(typed).not.toContain("left under the rules");
 });

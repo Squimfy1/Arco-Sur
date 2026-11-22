@@ -15,15 +15,23 @@
  * src/routes/+layout.server.ts does the reading.
  */
 
-import type { Accounting, ActivityRow, Day, History, Holding, Limit, SenderView, Tone, View } from "../contract.ts";
+import type { Accounting, ActivityRow, Day, History, HistoryMark, HistoryRange, Holding, Limit, SenderView, Tone, View } from "../contract.ts";
 import { CHAIN_ID } from "./arc.ts";
-import type { KnownContract } from "./contracts.ts";
+import { CONTRACTS, type KnownContract } from "./contracts.ts";
 import { ARC_USDC_TOKEN, type Mandate, type Spent, fromUnits, fromWei, normalise, toUnits } from "./guard.ts";
 import type { TokenBalance } from "./read.ts";
 import { type Report, type Row, type Status, claimed } from "./reconcile.ts";
+import type { Change } from "./timeline.ts";
+
+/** A spender by its name when it is a known contract, with its short address. */
+const spenderName = (address: string): string => {
+  const known = CONTRACTS.find((c) => normalise(c.address) === normalise(address));
+  const shortened = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  return known === undefined ? shortened : `${known.name} (${shortened})`;
+};
 
 export const EXPLORER = "https://testnet.arcscan.app";
-/** Circle's testnet faucet: where test USDC and EURC come from. */
+/** Circle's testnet faucet: where test USDC, EURC and cirBTC come from. */
 export const FAUCET = "https://faucet.circle.com";
 
 export type {
@@ -38,8 +46,8 @@ export type ViewInput = {
   report: Report;
   spent: Spent;
   mandate: Mandate;
-  /** Native balance at some blocks, for the chart. Optional: no chart without it. */
-  history?: readonly { block: bigint; wei: bigint }[];
+  /** Every change of the native balance, read from the chain. Optional: no chart without it. */
+  timeline?: readonly Change[];
 };
 
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -83,14 +91,16 @@ const STATUS: Record<Status, { label: string; tone: Tone }> = {
 
 const KIND: Record<string, string> = {
   native: "Payment",
-  transfer: "Token transfer",
+  transfer: "Token Transfer",
   approve: "Approval",
-  unknown: "Unknown call",
+  swap: "Swap",
+  unknown: "Unknown Call",
 };
 
 const NAMES: Record<string, { name: string; badge: string }> = {
-  USDC: { name: "US Dollar Coin", badge: "$" },
+  USDC: { name: "USD Coin", badge: "$" },
   EURC: { name: "Euro Coin", badge: "€" },
+  cirBTC: { name: "Circle Wrapped Bitcoin", badge: "₿" },
 };
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -110,6 +120,7 @@ function activity(row: Row, me: string): ActivityRow {
   const icon: ActivityRow["icon"] =
     row.status === "REFUSED" ? "refused"
     : r.kind === "approve" ? "approve"
+    : r.kind === "swap" ? "swap"
     : fromMe && toMe ? "self"
     : fromMe ? "out"
     : "in";
@@ -118,6 +129,8 @@ function activity(row: Row, me: string): ActivityRow {
   let detail = "";
   if (row.status === "REFUSED") {
     detail = r.refused_because ?? "no reason logged";
+  } else if (r.kind === "swap" && row.block !== null) {
+    detail = `for at least ${group(r.out_min ?? "?")} ${r.out_asset ?? "?"}, block ${row.block}`;
   } else if (row.block !== null) {
     detail = `block ${row.block}`;
   } else if (row.status === "PENDING") {
@@ -129,13 +142,13 @@ function activity(row: Row, me: string): ActivityRow {
     nonce: r.nonce === undefined ? unknown : String(r.nonce),
     status: STATUS[row.status].label,
     tone: STATUS[row.status].tone,
-    kind: KIND[r.kind ?? "native"] ?? "Unknown call",
+    kind: KIND[r.kind ?? "native"] ?? "Unknown Call",
     // A refused unbounded approval logs a 78-digit amount; it reads as "unlimited".
     amount: amount.length > 24 ? "unlimited" : group(amount),
     asset,
     to,
     toShort: short(to),
-    toLabel: normalise(to) === normalise(me) ? "this wallet" : "",
+    toLabel: normalise(to) === normalise(me) ? "this wallet" : (CONTRACTS.find((c) => normalise(c.address) === normalise(to))?.name ?? ""),
     fee: row.fee === null ? unknown : `${fromWei(row.fee)}`,
     detail,
     txUrl: r.tx_hash === undefined ? null : `${EXPLORER}/tx/${r.tx_hash}`,
@@ -160,56 +173,96 @@ function byDay(rows: readonly { row: ActivityRow; at: Date }[]): Day[] {
   return days;
 }
 
-/**
- * The balance history: each point's place as a fraction (0..1) of the block
- * span and of the balance range. The money math stays here in bigint; the
- * frontend decides how big the chart is and how it is drawn.
- */
-export function history(points: readonly { block: bigint; wei: bigint }[]): History | null {
-  const sorted = [...new Map(points.map((p) => [p.block, p])).values()].sort((a, b) =>
-    a.block < b.block ? -1 : a.block > b.block ? 1 : 0,
-  );
-  const first = sorted[0];
-  const last = sorted.at(-1);
-  if (first === undefined || last === undefined || first.block === last.block) return null;
+const RANGES: readonly { id: string; seconds: bigint | null }[] = [
+  { id: "1D", seconds: 86_400n },
+  { id: "1W", seconds: 604_800n },
+  { id: "1M", seconds: 2_592_000n },
+  { id: "1Y", seconds: 31_536_000n },
+  { id: "All", seconds: null },
+];
 
-  let lo = first.wei;
-  let hi = first.wei;
-  for (const p of sorted) {
-    if (p.wei < lo) lo = p.wei;
-    if (p.wei > hi) hi = p.wei;
-  }
-  const span = last.block - first.block;
-  const range = hi - lo;
-  // Fractions to 4 places, worked out in bigint; a flat balance sits at 0.5.
+// The chart's labels carry the date only: 2026-11-20.
+const asTime = (seconds: bigint) => stamp(new Date(Number(seconds) * 1000)).slice(0, 10);
+
+/**
+ * The balance history for the chart, one series per time range. Each range
+ * starts with the balance held when it opens, then every change inside it,
+ * then the balance now. A range longer than the wallet's life opens the
+ * moment the wallet was first funded, from nothing. Places are fractions to 4 decimals, worked
+ * out in bigint; a flat balance sits at 0.5.
+ */
+export function history(changes: readonly Change[], nowWei: bigint | null, now: Date): History | null {
+  const sorted = [...changes].sort((a, b) => (a.block < b.block ? -1 : a.block > b.block ? 1 : 0));
+  const funded = sorted.find((c) => c.wei > 0n);
+  const last = sorted.at(-1);
+  if (funded === undefined || last === undefined) return null;
+  const end = BigInt(Math.floor(now.getTime() / 1000));
+  const current = nowWei ?? last.wei;
   const frac = (part: bigint, whole: bigint) => Number((part * 10_000n) / whole) / 10_000;
-  return {
-    points: sorted.map((p) => ({
-      x: frac(p.block - first.block, span),
-      y: range === 0n ? 0.5 : frac(p.wei - lo, range),
-      block: String(p.block),
-      balance: group(fromWei(p.wei) ?? unknown),
-    })),
-    high: group(fromWei(hi) ?? unknown),
-    low: group(fromWei(lo) ?? unknown),
-    from: `block ${first.block}`,
-    to: `block ${last.block}`,
-  };
+
+  const ranges: HistoryRange[] = RANGES.map(({ id, seconds }) => {
+    const opens = seconds === null || end - seconds < funded.time ? funded.time : end - seconds;
+    const start = opens < end ? opens : end - 1n;
+    let opening = 0n;
+    for (const c of sorted) if (c.time < start) opening = c.wei;
+    const pts = [
+      { t: start, wei: opening },
+      ...sorted.filter((c) => c.time >= start && c.time <= end).map((c) => ({ t: c.time, wei: c.wei })),
+      { t: end, wei: current },
+    ];
+    let lo = pts[0]!.wei;
+    let hi = pts[0]!.wei;
+    for (const p of pts) {
+      if (p.wei < lo) lo = p.wei;
+      if (p.wei > hi) hi = p.wei;
+    }
+    const span = end - start;
+    const place = (p: { t: bigint; wei: bigint }) => ({
+      x: frac(p.t - start, span),
+      y: hi === lo ? 0.5 : frac(p.wei - lo, hi - lo),
+    });
+    const mark = (wei: bigint): HistoryMark => ({ balance: group(fromWei(wei) ?? unknown), ...place(pts.find((p) => p.wei === wei)!) });
+    const diff = current - opening;
+    // The change reads to two decimals, cut, never rounded up; under a cent says so.
+    const size = cut(group(fromWei(diff < 0n ? -diff : diff) ?? unknown));
+    const shown = size === "0.00" ? "<0.01" : size;
+    return {
+      id,
+      points: pts.map((p) => ({ ...place(p), balance: group(fromWei(p.wei) ?? unknown), when: asTime(p.t) })),
+      high: mark(hi),
+      low: mark(lo),
+      from: asTime(start),
+      to: asTime(end),
+      change: diff === 0n ? "No change" : `${diff > 0n ? "+" : "−"}${shown} USDC`,
+      tone: diff > 0n ? "ok" : "quiet",
+    };
+  });
+  return { ranges };
 }
 
-function limit(asset: string, perPayment: string, total: string, used: string, decimals: number): Limit {
+// USDC pays the gas, so Max leaves this much behind for the fee (a send costs about 0.0005).
+const FEE_RESERVE_WEI = 10n ** 16n; // 0.01 USDC
+
+function limit(asset: string, perPayment: string, total: string, used: string, decimals: number, held: bigint | null): Limit {
   const totalUnits = toUnits(total, decimals);
   const usedUnits = toUnits(used, decimals);
   const leftUnits = totalUnits > usedUnits ? totalUnits - usedUnits : 0n;
   const pct = totalUnits === 0n ? 0n : (usedUnits * 100n) / totalUnits;
+  const spendable = held === null ? null : asset === "USDC" ? (held > FEE_RESERVE_WEI ? held - FEE_RESERVE_WEI : 0n) : held;
+  let max = spendable;
+  for (const cap of [toUnits(perPayment, decimals), leftUnits]) if (max !== null && cap < max) max = cap;
   return {
     asset,
+    name: NAMES[asset]?.name ?? asset,
     badge: NAMES[asset]?.badge ?? asset.slice(0, 1),
     perPayment: group(perPayment),
     total: group(total),
+    monthly: total,
     used: group(fromUnits(usedUnits, decimals) ?? "0"),
     left: group(fromUnits(leftUnits, decimals) ?? "0"),
     usedPercent: String(pct > 100n ? 100n : pct),
+    available: held === null ? "" : (fromUnits(held, decimals) ?? ""),
+    max: max === null ? "" : (fromUnits(max, decimals) ?? ""),
   };
 }
 
@@ -262,8 +315,11 @@ export function buildView(input: ViewInput): View {
   }
 
   const limits: Limit[] = [
-    limit("USDC", mandate.maxAmountUsdc, mandate.maxTotalUsdc, spent["USDC"] ?? "0", 18),
-    ...mandate.tokens.map((t) => limit(t.symbol, t.maxAmount, t.maxTotal, spent[t.symbol] ?? "0", t.decimals)),
+    limit("USDC", mandate.maxAmountUsdc, mandate.maxTotalUsdc, spent["USDC"] ?? "0", 18, input.nativeWei),
+    ...mandate.tokens.map((t) => {
+      const held = input.tokens.find((k) => normalise(k.contract.address) === normalise(t.address))?.balance.raw ?? null;
+      return limit(t.symbol, t.maxAmount, t.maxTotal, spent[t.symbol] ?? "0", t.decimals, held);
+    }),
   ];
 
   const count = (s: Status) => report.rows.filter((r) => r.status === s).length;
@@ -317,13 +373,14 @@ export function buildView(input: ViewInput): View {
 
   return {
     readAt: stamp(input.readAt),
-    network: `Arc testnet · chain ${CHAIN_ID}`,
+    network: `Arc testnet, chain ${CHAIN_ID}`,
+    chain: "testnet",
     block: input.block === null ? unknown : String(input.block),
     wallet: { address: me, short: short(me), url: `${EXPLORER}/address/${me}` },
     verdict: {
       tone: report.ok ? "ok" : "bad",
       label: report.ok ? "Reconciled" : "Not reconciled",
-      counts: counted.join(" · "),
+      counts: counted.join(", "),
     },
     total: {
       whole,
@@ -332,7 +389,7 @@ export function buildView(input: ViewInput): View {
       short: cut(native),
       asset: "USDC",
     },
-    history: input.history === undefined ? null : history(input.history),
+    history: input.timeline === undefined ? null : history(input.timeline, input.nativeWei, input.readAt),
     holdings,
     holdingsCheck,
     mandate: {
@@ -340,7 +397,9 @@ export function buildView(input: ViewInput): View {
         address: a,
         label: normalise(a) === normalise(me) ? "this wallet" : "",
       })),
-      spenders: mandate.allowedSpenders.length === 0 ? "No one. Every approval is refused." : mandate.allowedSpenders.join(", "),
+      spenders: mandate.allowedSpenders.length === 0
+        ? "No one. Every approval is refused."
+        : `${mandate.allowedSpenders.map(spenderName).join(", ")}, for exactly one swap's amount at a time.`,
       limits,
     },
     // Newest first: the question on opening the page is "what just happened".

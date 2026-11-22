@@ -26,7 +26,7 @@ import { relative } from "node:path";
 import { parseArgs } from "node:util";
 
 import * as arc from "./arc.ts";
-import { proveEffect } from "./events.ts";
+import { type Log, decodeTokenEvents, proveEffect } from "./events.ts";
 import { ARC_USDC_TOKEN, fromUnits, fromWei, normalise, toUnits, toWei } from "./guard.ts";
 import { decodeIntent } from "./intent.ts";
 import { LOG_FILE } from "./paths.ts";
@@ -46,11 +46,16 @@ export type LogRecord = {
   to: string;
   broadcast: boolean;
   amount_usdc?: string;
-  kind?: "native" | "transfer" | "approve" | "unknown";
+  kind?: "native" | "transfer" | "approve" | "swap" | "unknown";
   asset?: string;
   token?: string;
   decimals?: number;
   amount?: string;
+  /** A swap's output: the token, its symbol and the least it must pay back. */
+  out_asset?: string;
+  out_token?: string;
+  out_decimals?: number;
+  out_min?: string;
   nonce?: number;
   tx_hash?: string;
   refused_because?: string;
@@ -203,6 +208,44 @@ async function checkRow(entry: Entry, outcomes: OutcomeEntry[], chain: Chain): P
     }
   } else if (tx.to === null) {
     problems.push("call: chain shows a contract creation, not a token call");
+  } else if (kind === "swap") {
+    // A swap: the chain's `to` is the swap contract; what goes in, what must
+    // come out and who is paid are inside the calldata.
+    if (normalise(r.to) !== normalise(tx.to)) {
+      problems.push(`to: log ${normalise(r.to) ?? r.to}, chain ${normalise(tx.to)}`);
+    }
+    const onChain = decodeIntent({ to: tx.to as `0x${string}`, value: BigInt(tx.value), data: tx.input as `0x${string}` });
+    if (onChain.kind !== "swap") {
+      problems.push(`call: log swap, chain ${onChain.kind}`);
+    } else {
+      if (normalise(onChain.tokenIn) !== normalise(r.token)) {
+        problems.push(`token in: log ${normalise(r.token) ?? r.token}, chain ${normalise(onChain.tokenIn)}`);
+      }
+      if (normalise(onChain.tokenOut) !== normalise(r.out_token)) {
+        problems.push(`token out: log ${normalise(r.out_token) ?? r.out_token}, chain ${normalise(onChain.tokenOut)}`);
+      }
+      let logUnits: bigint | null = null;
+      try {
+        logUnits = toUnits(r.amount ?? "", r.decimals ?? -1);
+      } catch {
+        // Unreadable amount or decimals: reported below, never guessed at.
+      }
+      if (logUnits !== onChain.amountIn) {
+        problems.push(`amount: log ${r.amount} ${r.asset}, chain ${onChain.amountIn} base units`);
+      }
+      const strangers = onChain.beneficiaries.filter((b) => normalise(b) !== chainFrom);
+      if (strangers.length > 0) {
+        problems.push(`the swap pays someone else: ${strangers.join(", ")}`);
+      }
+      // USDC that went in through its token view left the native balance, and
+      // USDC that came out arrived in it: the balance check needs both.
+      if (normalise(onChain.tokenIn) === ARC_USDC_TOKEN) {
+        outflow += onChain.amountIn * 10n ** 12n;
+      }
+      if (normalise(onChain.tokenOut) === ARC_USDC_TOKEN && rcpt !== null) {
+        outflow -= arrived(rcpt.logs ?? [], ARC_USDC_TOKEN, chainFrom) * 10n ** 12n;
+      }
+    }
   } else {
     // A token call: the chain's `to` is the TOKEN, and the real recipient and
     // amount are inside the calldata. Decode it, exactly as the guard did.
@@ -281,7 +324,25 @@ async function checkRow(entry: Entry, outcomes: OutcomeEntry[], chain: Chain): P
       return row("DIVERGENT", [`events: ${proof.reason}`], block, fee, outflow);
     }
   }
+  // A swap: the output token's own events must show at least the minimum
+  // arriving here.
+  if (kind === "swap" && r.out_token !== undefined && r.out_min !== undefined) {
+    // Older swap lines did not record the output's decimals; the swap assets
+    // are 6 (USDC's token view, EURC) or 8 (cirBTC).
+    const decimals = r.out_decimals ?? (r.out_asset === "cirBTC" ? 8 : 6);
+    const got = arrived(rcpt.logs ?? [], normalise(r.out_token) ?? "", sender);
+    if (got < toUnits(r.out_min, decimals)) {
+      return row("DIVERGENT", [`events: ${fromUnits(got, decimals)} ${r.out_asset} arrived, below the minimum ${r.out_min}`], block, fee, outflow);
+    }
+  }
   return row("MATCHED", [], block, fee, outflow);
+}
+
+/** How much of `token` the receipt's Transfer events paid to `to`, in base units. */
+function arrived(logs: readonly Log[], token: string, to: string | null): bigint {
+  return decodeTokenEvents(logs)
+    .filter((e) => e.kind === "transfer" && e.token === token && e.to === to)
+    .reduce((sum, e) => sum + e.amount, 0n);
 }
 
 /**

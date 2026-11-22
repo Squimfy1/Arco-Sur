@@ -6,10 +6,17 @@
  *
  * The look: a hardware-wallet companion app. Near-black panels, white text,
  * one lavender accent for actions, and status colours that always travel
- * with a word, so nothing depends on colour alone.
+ * with a word, so nothing depends on colour alone. Screen titles, receipts,
+ * meters and tab cards borrow their shapes from Inherence's site, in these
+ * colours.
+ *
+ * Two looks share every name below: dark (the default) and light, chosen on
+ * the Settings screen. Any element can carry data-theme, so the Settings
+ * previews show each look in miniature.
  */
 
-:root {
+:root,
+[data-theme="dark"] {
   --bg: oklch(0.155 0.006 285);
   --sidebar: oklch(0.13 0.006 285);
   --panel: oklch(0.2 0.008 285);
@@ -37,10 +44,17 @@
 
   --other: oklch(0.5 0.02 285);
   --badge-ink: oklch(0.99 0 0);
+  --pop-shadow: 0 16px 40px oklch(0 0 0 / 0.5), 0 0 0 1px var(--rule-strong);
 
-  --sans: "Inter", system-ui, sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* One typeface for everything, figures included (they line up in columns). */
+  --sans: "Inter Tight", system-ui, sans-serif;
+  /* The Cathedral wordmark only. */
+  --brand-face: "Space Grotesk", "Inter Tight", sans-serif;
 
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --lift: 0 4px 12px oklch(0 0 0 / 0.35);
+
+  --step--3: 0.6875rem;
   --step--2: 0.75rem;
   --step--1: 0.8125rem;
   --step-0: 0.875rem;
@@ -48,6 +62,8 @@
   --step-2: 1.25rem;
   --step-3: 1.75rem;
   --step-4: 2.5rem;
+  /* The Portfolio balance: the largest thing in the app. */
+  --step-hero: clamp(4.5rem, 7vw, 7rem);
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -69,7 +85,85 @@
   --chart-fill-top: oklch(0.8 0.11 290 / 0.28);
   --chart-fill-bottom: oklch(0.8 0.11 290 / 0);
 
+  /* The Home header's globe of cubes: five purples from the far side to
+     the lit face, the shades they turn under the pointer, and the agents. */
+  /* Over the app while a payment goes through: the app shows through, blurred. */
+  --scrim: oklch(0.12 0.01 285 / 0.45);
+  --blur: 10px;
+
+  /* Exported Word files: Word reads plain colours only, so the statement's
+     look is repeated here as hex, matching the light look. */
+  --doc-ink: #1f1d26;
+  --doc-muted: #6c6977;
+  --doc-rule: #dddbe3;
+  --doc-accent: #6b46c8;
+  --doc-ok: #23794f;
+  --doc-bad: #b3302a;
+
+  /* Behind company logos: light, so their own colours read in both looks. */
+  --logo-plate: oklch(0.97 0.004 285);
+
+  --globe-bg: oklch(0.13 0.025 290);
+  --globe-1: oklch(0.22 0.05 290);
+  --globe-2: oklch(0.32 0.09 290);
+  --globe-3: oklch(0.48 0.15 292);
+  --globe-4: oklch(0.62 0.17 295);
+  --globe-5: oklch(0.78 0.13 298);
+  --globe-hot-1: oklch(0.25 0.07 330);
+  --globe-hot-2: oklch(0.38 0.13 335);
+  --globe-hot-3: oklch(0.55 0.19 340);
+  --globe-hot-4: oklch(0.7 0.18 345);
+  --globe-hot-5: oklch(0.85 0.11 350);
+  --globe-agent: oklch(0.96 0.04 295);
+  --globe-agent-hot: oklch(0.95 0.06 345);
+  --globe-star: oklch(1 0 0);
+  --globe-star-dim: oklch(1 0 0 / 0.45);
+
   color-scheme: dark;
+}
+
+/* The light look: white panels, near-black text, a deeper violet accent so
+   it still reads as text and on buttons. */
+[data-theme="light"] {
+  --bg: oklch(0.99 0.002 285);
+  --sidebar: oklch(0.97 0.004 285);
+  --panel: oklch(0.965 0.004 285);
+  --panel-2: oklch(0.94 0.006 285);
+  --hover: oklch(0.915 0.008 285);
+  --ink: oklch(0.2 0.01 285);
+  --ink-2: oklch(0.38 0.012 285);
+  --ink-3: oklch(0.5 0.014 285);
+  --rule: oklch(0.9 0.006 285);
+  --rule-strong: oklch(0.83 0.01 285);
+
+  --accent: oklch(0.5 0.17 290);
+  --accent-ink: oklch(0.99 0 0);
+  --accent-soft: oklch(0.9 0.05 290);
+  --accent-glow: oklch(0.5 0.17 290 / 0.18);
+
+  --ok: oklch(0.48 0.12 155);
+  --ok-bg: oklch(0.93 0.05 155);
+  --warn: oklch(0.52 0.11 70);
+  --warn-bg: oklch(0.94 0.06 85);
+  --bad: oklch(0.52 0.19 25);
+  --bad-bg: oklch(0.94 0.04 22);
+  --quiet: oklch(0.45 0.01 285);
+  --quiet-bg: oklch(0.92 0.005 285);
+
+  --other: oklch(0.62 0.02 285);
+  --pop-shadow: 0 16px 40px oklch(0.2 0.02 285 / 0.14), 0 0 0 1px var(--rule-strong);
+  --lift: 0 4px 12px oklch(0.2 0.02 285 / 0.1);
+
+  --chart-fill-top: oklch(0.5 0.17 290 / 0.2);
+  --chart-fill-bottom: oklch(0.5 0.17 290 / 0);
+  --scrim: oklch(0.95 0.005 285 / 0.5);
+
+  color-scheme: light;
+}
+
+/* Larger text, from Settings: every size is in rem, so all of it grows. */
+:root[data-text="large"] {
+  font-size: 112.5%;
 }
 
 *,
@@ -112,7 +206,6 @@ select {
 
 /* Numbers line up in columns and never shift as they change. */
 .num {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -135,6 +228,23 @@ select {
   padding: var(--space-5);
 }
 
+/* A small label over a figure or a title. */
+.eyebrow {
+  margin: 0;
+  font-size: var(--step--1);
+  font-weight: 500;
+  color: var(--ink-3);
+}
+
+/* Screen titles: big and light. */
+h1 {
+  margin: var(--space-2) 0 var(--space-2);
+  font-size: calc(var(--step-4) * 1.4);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
 .card-title {
   margin: 0 0 var(--space-4);
   font-size: var(--step-1);
@@ -143,6 +253,16 @@ select {
 
 .muted {
   color: var(--ink-3);
+}
+
+/* Read by screen readers, not shown. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .tag {
@@ -163,10 +283,29 @@ select {
   color: var(--accent-ink);
   font-weight: 600;
   cursor: pointer;
+  transition:
+    background-color 0.2s var(--ease-out),
+    color 0.2s var(--ease-out),
+    box-shadow 0.2s var(--ease-out);
 }
 
 .btn:hover {
   filter: brightness(1.06);
+}
+
+/* A thin outline pill that fills with the accent on hover. */
+.btn.outline {
+  background: transparent;
+  color: var(--ink);
+  font-weight: 500;
+  box-shadow: inset 0 0 0 1px var(--rule-strong);
+}
+
+.btn.outline:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  filter: none;
 }
 
 .btn.ghost {
@@ -221,5 +360,17 @@ select {
 @media (prefers-reduced-motion: no-preference) {
   html {
     scroll-behavior: smooth;
+  }
+}
+
+/* Anything printed (the statement) is on white paper, whatever the look. */
+@media print {
+  :root {
+    color-scheme: light;
+  }
+
+  html,
+  body {
+    background: #fff !important;
   }
 }

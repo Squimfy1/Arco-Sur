@@ -39,9 +39,10 @@ import { loadAccount } from "./account.ts";
 import * as arc from "./arc.ts";
 import { CONTRACTS, type KnownContract, TOKENS } from "./contracts.ts";
 import * as guard from "./guard.ts";
-import { proveEffect } from "./events.ts";
+import { decodeTokenEvents, proveEffect } from "./events.ts";
 import { decodeIntent, encodeApprove, encodeTransfer, type TxRequest } from "./intent.ts";
 import { walletMandate } from "./mandate.ts";
+import { monthStart } from "./limits.ts";
 import { LOG_FILE } from "./paths.ts";
 import { tokenInfo } from "./read.ts";
 import { simulate } from "./simulate.ts";
@@ -69,7 +70,9 @@ function log(record: Record<string, unknown>, logFile: string): void {
 
 /** The fields of an evidence line that the totals read. */
 type SpendLine = {
+  ts?: number;
   from?: string;
+  to?: string;
   broadcast?: boolean;
   kind?: string;          // absent on native lines written before Stage 5
   amount_usdc?: string;   // native lines
@@ -79,11 +82,13 @@ type SpendLine = {
 };
 
 /**
- * What this script has recorded as broadcast from this address, per asset.
- * Approvals count too: an approval is money someone else may take. USDC is
+ * What this script has recorded as broadcast from this address this month
+ * (since `since`, in seconds), per asset.
+ * Approvals count too: an approval is money someone else may take. Payments
+ * to this wallet itself do not: that money never left. USDC is
  * summed at 18 decimals, whether it moved natively or through its token.
  */
-export function alreadySent(sender: string, logFile = LOG_FILE): guard.Spent {
+export function alreadySent(sender: string, logFile = LOG_FILE, since = monthStart()): guard.Spent {
   const totals = new Map<string, { units: bigint; decimals: number }>();
   const add = (symbol: string, amount: string, decimals: number) => {
     const t = totals.get(symbol) ?? { units: 0n, decimals };
@@ -98,6 +103,17 @@ export function alreadySent(sender: string, logFile = LOG_FILE): guard.Spent {
       }
       const r = JSON.parse(line) as SpendLine;
       if ((r.from ?? "").toLowerCase() !== sender.toLowerCase() || !r.broadcast) {
+        continue;
+      }
+      // Only this month counts toward the monthly limits. A line with no time
+      // is counted, to be safe.
+      if (r.ts !== undefined && r.ts < since) {
+        continue;
+      }
+      // Paid to this wallet itself: the money never left, so it uses no
+      // total. A swap is counted by the approval made for it, not again.
+      const kind = r.kind ?? "native";
+      if (kind === "swap" || (kind !== "approve" && (r.to ?? "").toLowerCase() === sender.toLowerCase())) {
         continue;
       }
       if ((r.kind ?? "native") === "native") {
@@ -140,6 +156,18 @@ function tokenAt(address: string): KnownContract {
 const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
 /**
+ * What execute() has just done, for a screen to follow live. The terminal
+ * prints the same steps as text. Amounts in base units; the caller formats.
+ */
+export type ExecStep =
+  | { step: "checked"; described: string; reason: string }
+  | { step: "rehearsed"; gas: bigint; price: bigint }
+  | { step: "broadcast"; hash: string; nonce: number }
+  | { step: "confirmed"; hash: string; ok: boolean; block: bigint | null; fee: bigint; proof: string; received: bigint | null }
+  | { step: "pending"; hash: string; nonce: number }
+  | { step: "stopped"; at: "checked" | "rehearsed" | "funds"; reason: string };
+
+/**
  * Options exist so tests can use a throwaway wallet and a temporary log,
  * and never touch the real key or the real evidence.
  */
@@ -147,18 +175,26 @@ export type SendOptions = {
   account?: PrivateKeyAccount;
   logFile?: string;
   receiptTimeoutMs?: number;
+  /** Called after each step, for a screen to follow. */
+  onStep?: (s: ExecStep) => void;
 };
 
 /** The one pipeline every send goes through. Returns the tx hash, or null if refused. */
 export async function execute(
   mandate: guard.Mandate,
   tx: TxRequest,
-  { account, logFile = LOG_FILE, receiptTimeoutMs = 120_000 }: SendOptions = {},
+  { account, logFile = LOG_FILE, receiptTimeoutMs = 120_000, onStep = () => {} }: SendOptions = {},
 ): Promise<string | null> {
   const acct = account ?? loadAccount();
-  const refuseAndLog = (fields: Record<string, unknown>, reason: string, label = "guard: REFUSE"): null => {
+  const refuseAndLog = (
+    fields: Record<string, unknown>,
+    reason: string,
+    label = "guard: REFUSE",
+    at: "checked" | "rehearsed" = "checked",
+  ): null => {
     console.log(`${label} — ${reason}`);
     log({ ts: Date.now() / 1000, from: acct.address, ...fields, broadcast: false, refused_because: reason }, logFile);
+    onStep({ step: "stopped", at, reason });
     return null;
   };
 
@@ -175,6 +211,25 @@ export async function execute(
   } else if (intent.kind === "unknown") {
     entry = { kind: "unknown", to: tx.to, amount: "0", asset: "?" };
     described = `unknown call to ${tx.to}`;
+  } else if (intent.kind === "swap") {
+    let into: { symbol: string; decimals: number };
+    let out: { symbol: string; decimals: number };
+    try {
+      [into, out] = await Promise.all([tokenInfo(tokenAt(intent.tokenIn)), tokenInfo(tokenAt(intent.tokenOut))]);
+    } catch (e) {
+      return refuseAndLog(
+        { kind: "swap", to: tx.to, amount: "?", asset: "?" },
+        `could not read the swap's tokens: ${(e as Error).message}`,
+      );
+    }
+    const amount = guard.fromUnits(intent.amountIn, into.decimals);
+    const minOut = guard.fromUnits(intent.minOut, out.decimals);
+    // Not counted by alreadySent: the approval before it already was.
+    entry = {
+      kind: "swap", asset: into.symbol, token: intent.tokenIn, decimals: into.decimals, to: tx.to, amount,
+      out_asset: out.symbol, out_token: intent.tokenOut, out_decimals: out.decimals, out_min: minOut,
+    };
+    described = `swap ${amount} ${into.symbol} for at least ${minOut} ${out.symbol} via ${short(tx.to)}`;
   } else {
     let symbol: string;
     try {
@@ -195,17 +250,19 @@ export async function execute(
     chainId: arc.CHAIN_ID,
     decimals,
     alreadySent: alreadySent(acct.address, logFile),
+    sender: acct.address,
   });
   if (!verdict.allowed) {
     return refuseAndLog(entry, verdict.reason);
   }
   console.log(`guard: ALLOW — ${verdict.reason}`);
+  onStep({ step: "checked", described, reason: verdict.reason });
 
   // 1b. REHEARSE. The node runs the transaction without keeping it. If it
   //     would revert, it would still cost gas for nothing: stop here.
-  const sim = await simulate(acct.address, tx);
+  const sim = await simulate(acct.address, tx, arc, { returnsBool: intent.kind === "transfer" || intent.kind === "approve" });
   if (!sim.ok) {
-    return refuseAndLog(entry, `simulation: ${sim.reason}`, "simulate: REVERT");
+    return refuseAndLog(entry, `simulation: ${sim.reason}`, "simulate: REVERT", "rehearsed");
   }
   console.log(`simulate: OK — gas limit ${sim.gas}`);
   const gas = sim.gas;
@@ -217,12 +274,12 @@ export async function execute(
   const balance = required(await arc.balanceWei(acct.address), "balance");
   const cost = tx.value + gas * price;
   if (balance < cost) {
-    console.log(
-      `insufficient: have ${guard.fromWei(balance)}, ` +
-        `need ${guard.fromWei(cost)} incl gas`,
-    );
+    const reason = `have ${guard.fromWei(balance)}, need ${guard.fromWei(cost)} incl gas`;
+    console.log(`insufficient: ${reason}`);
+    onStep({ step: "stopped", at: "funds", reason });
     return null;
   }
+  onStep({ step: "rehearsed", gas, price });
 
   console.log(`intent: ${described}  nonce=${n}`);
 
@@ -244,12 +301,14 @@ export async function execute(
     nonce: n, tx_hash: txHash, broadcast: true,
   }, logFile);
   console.log(`broadcast: ${txHash}`);
+  onStep({ step: "broadcast", hash: txHash, nonce: n });
 
   // 4. Verify. What actually happened, not what was intended.
   const r = await waitForReceipt(txHash, receiptTimeoutMs);
   if (r === null) {
     console.log("receipt: UNKNOWN — still pending after timeout.");
     console.log(`         Do NOT resend. Re-check with nonce ${n}.`);
+    onStep({ step: "pending", hash: txHash, nonce: n });
     return txHash;
   }
 
@@ -272,6 +331,8 @@ export async function execute(
   console.log(`fee: ${guard.fromWei(fee)} USDC (gasUsed × effectiveGasPrice)`);
 
   // 5. Reconcile: intended vs actual.
+  let proof = status === 1n ? "the chain accepted it" : "the chain reverted it; only the fee was spent";
+  let received: bigint | null = null;
   if (status === 1n) {
     const after = await arc.nonce(acct.address);
     console.log(
@@ -282,20 +343,32 @@ export async function execute(
     // status 1 means "did not revert", not "the money went where I meant".
     // For a token call, the token's own event is the proof.
     if (intent.kind === "transfer" || intent.kind === "approve") {
-      const proof = proveEffect(r.logs ?? [], {
+      const shown = proveEffect(r.logs ?? [], {
         kind: intent.kind,
         token: intent.token,
         from: acct.address,
         to: intent.kind === "transfer" ? intent.to : intent.spender,
         amount: intent.amount,
       });
-      console.log(
-        proof.proven
-          ? `proof: the token's ${intent.kind === "transfer" ? "Transfer" : "Approval"} event matches exactly`
-          : `proof: UNEXPECTED — ${proof.reason}`,
-      );
+      const event = intent.kind === "transfer" ? "Transfer" : "Approval";
+      proof = shown.proven ? `the token's ${event} event matches exactly` : `UNEXPECTED: ${shown.reason}`;
+      console.log(`proof: ${proof}`);
+    }
+
+    // For a swap: what the output token itself says arrived here.
+    if (intent.kind === "swap") {
+      const me = acct.address.toLowerCase();
+      const out = intent.tokenOut.toLowerCase();
+      received = decodeTokenEvents(r.logs ?? [])
+        .filter((e) => e.kind === "transfer" && e.token === out && e.to === me)
+        .reduce((sum, e) => sum + e.amount, 0n);
+      proof = received >= intent.minOut
+        ? "the output token's Transfer events show at least the minimum arrived here"
+        : `UNEXPECTED: ${received} arrived, below the minimum ${intent.minOut}`;
+      console.log(`proof: ${proof}`);
     }
   }
+  onStep({ step: "confirmed", hash: txHash, ok: status === 1n, block, fee, proof, received });
 
   return txHash;
 }

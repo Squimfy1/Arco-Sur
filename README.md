@@ -73,6 +73,18 @@ logged transaction, minus every fee and every USDC sent to others, must equal
 the balance now. Anything left over is reported as unexplained.
 
 ```
+npm run history                      # every change of the USDC balance, from the chain
+```
+
+The balance history is read from the chain itself, so money that arrives
+(a faucet drip, a transfer from anyone) is in it, not only this wallet's own
+sends. Past blocks are final, so what it finds is kept in `cache/timeline.json`
+(gitignored, safe to delete) and each run reads only the blocks since the
+last. The app reads it again on every refresh and every 15 seconds while its
+window is open; the Portfolio chart shows it with 1D, 1W, 1M, 1Y and All
+ranges, and hovering shows what the wallet held at any moment.
+
+```
 npm run balances                     # native USDC + every registered token
 npm run balances -- --address 0x…    # for any address
 ```
@@ -87,16 +99,30 @@ npm run install-app   # builds Arco-Sur.app and puts it in ~/Applications
 npm run app           # or: build and open it straight from the repo
 ```
 
-A desktop wallet in the style of a hardware-wallet companion app: Portfolio
-(balance, balance history, assets, latest operations), Operations (every
-send and refusal, by day, checked against the chain), Send, Receive, Swap and
-Rules (the limits, how much is used, and the accounting). The top bar shows
-whether the log reconciles, re-reads on Refresh, and the eye hides every
-amount.
+A desktop wallet in the style of a hardware-wallet companion app: Home (Arc's
+header and news from its ecosystem), Portfolio (balance, balance history,
+assets, latest operations), Operations (every send, swap and refusal, by day,
+checked against the chain), Send, Receive, Swap, Rules (the limits, how much
+is used, and the accounting) and Settings (dark, light or the computer's own
+look; text size; the monthly limit for each asset, saved in
+`settings/limits.json` and enforced by the guard). Refresh re-reads everything live from the node; the eye
+hides every amount.
 
 - **Send** checks a payment against the rules and rehearses it on the node,
-  then shows the fee. It does not sign yet (Stage 10): `npm run send` does.
-- **Swap** is laid out but switched off: the rules approve no one.
+  then shows a quote: fee, total, balance after. **Send** signs and
+  broadcasts it on the server through the same `execute()` as `npm run send`,
+  and a window follows each step (checked, rehearsed, broadcast, confirmed)
+  with the explorer link. Payments to the wallet itself do not use the totals.
+- **Swap** asks Circle's swap service (App Kit Swap, `src/lib/server/swap.ts`)
+  for a quote, then approves Circle's swap contract for exactly the amount and
+  swaps, both through `execute()`. The guard reads the swap call itself and
+  refuses one that would pay anyone but this wallet. Testnet prices are not
+  market prices.
+- **Vaults** lists the largest vaults on Arc mainnet (Morpho and Aave V4) for
+  reference. Each opens its own page, read live from Morpho's and Aave's
+  public APIs (`src/lib/server/vault-detail.ts`): key figures, a yield and
+  deposits chart, where the money is lent, who controls the vault, and a
+  "How It Works" diagram of its markets.
 - **Faucet** and **Explorer** open in your normal browser.
 
 Nothing listens on a network port, not even localhost: the window asks the

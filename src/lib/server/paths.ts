@@ -27,3 +27,7 @@ function findRoot(start: string): string {
 export const ROOT = process.env.ARCO_SUR_ROOT ?? findRoot(import.meta.dirname);
 export const KEY_FILE = join(ROOT, ".testnet_key");
 export const LOG_FILE = join(ROOT, "evidence", "sends.jsonl");
+// What the chain said about the balance in the past. Final, so kept; safe to delete.
+export const TIMELINE_FILE = join(ROOT, "cache", "timeline.json");
+// The monthly limits set on the Settings screen. Rules, so on the server.
+export const LIMITS_FILE = join(ROOT, "settings", "limits.json");

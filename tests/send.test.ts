@@ -134,3 +134,39 @@ test("a payment the chain would reject is stopped at simulation and never signed
   expect(lines[0]).toMatchObject({ broadcast: false, refused_because: `simulation: ${reason}` });
   expect(lines[0]).not.toHaveProperty("tx_hash");
 });
+
+test("the app follows a send step by step: checked, rehearsed, broadcast, confirmed", async () => {
+  vi.mocked(arc.simulateCall).mockResolvedValue("0x");
+  vi.mocked(arc.nonce).mockResolvedValueOnce(3).mockResolvedValueOnce(4);
+  vi.mocked(arc.gasPrice).mockResolvedValue(20_000_000_000n);
+  vi.mocked(arc.balanceWei).mockResolvedValue(10n ** 21n);
+  vi.mocked(arc.ask).mockResolvedValue("0xfeed");
+  vi.mocked(arc.receipt).mockResolvedValue({
+    status: "0x1", gasUsed: "0x5208", effectiveGasPrice: "0x4a817c800", blockNumber: "0x10",
+  });
+
+  const steps: string[] = [];
+  await send(mandate, account.address, "0.1", { account, logFile, onStep: (s) => steps.push(s.step) });
+  expect(steps).toEqual(["checked", "rehearsed", "broadcast", "confirmed"]);
+});
+
+test("a refused send tells the app where it stopped, and nothing after", async () => {
+  const steps: { step: string; at?: string }[] = [];
+  await send(mandate, STRANGER, "0.1", { account, logFile, onStep: (s) => steps.push(s) });
+  expect(steps).toEqual([expect.objectContaining({ step: "stopped", at: "checked" })]);
+});
+
+test("payments to this wallet itself use none of the total; payments elsewhere and approvals do", async () => {
+  const { appendFileSync } = await import("node:fs");
+  const { alreadySent } = await import("../src/lib/server/send.ts");
+  const me = account.address;
+  const lines = [
+    { from: me, to: me, amount_usdc: "0.9", broadcast: true },
+    { from: me, to: STRANGER, amount_usdc: "0.2", broadcast: true },
+    { from: me, kind: "transfer", asset: "EURC", decimals: 6, to: me, amount: "1", broadcast: true },
+    { from: me, kind: "approve", asset: "EURC", decimals: 6, to: "0xBBD70b01a1CAbc96d5b7b129Ae1AAabdf50dd40b", amount: "0.5", broadcast: true },
+    { from: me, kind: "swap", asset: "EURC", decimals: 6, to: "0xBBD70b01a1CAbc96d5b7b129Ae1AAabdf50dd40b", amount: "0.5", broadcast: true },
+  ];
+  appendFileSync(logFile, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  expect(alreadySent(me, logFile)).toEqual({ USDC: "0.2", EURC: "0.5" });
+});

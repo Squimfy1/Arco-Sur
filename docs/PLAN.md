@@ -432,10 +432,16 @@ will name.
 
 ---
 
-## Stage 10 · Send from the interface  ·  NEXT
+## Stage 10 · Send from the interface  ·  DONE (21 Nov 2026)
 
-The Review step is built (Stage 9b): the screen already runs the guard and
-the rehearsal through the same code as the CLI. What is left is signing.
+Send and Swap sign from the app. `execute()` reports each step to a callback
+(`onStep`) as well as the terminal; `src/lib/server/progress.ts` words the
+steps and `/api/send` and `/api/swap` stream them to the window, one JSON line
+per step. Live: 0.01 USDC to the wallet itself (block 73387454) and 0.1 USDC
+to 0.143698 EURC through Circle's swap service (approval block 73387556, swap
+block 73387563), all MATCHED by reconcile. Rule changes Tom chose: payments
+to the wallet itself use no total; Circle's swap contract is the one allowed
+spender, for exactly one swap's amount.
 
 
 **Concept: the UI calls the same guard.** No second code path, no duplicated

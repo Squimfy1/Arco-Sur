@@ -56,6 +56,40 @@ function staticFile(pathname) {
   return new Response(Readable.toWeb(createReadStream(file)), { headers });
 }
 
+/**
+ * Print one of the app's own pages to PDF, in a hidden window, with
+ * Chromium's print engine: the same page, its @page rules (A4, page numbers)
+ * and its print styles. Waits until the page says it is ready to print.
+ */
+async function printPage(path) {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1240,
+    height: 900,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  try {
+    await win.loadURL(`${ORIGIN}${path}`);
+    await win.webContents.executeJavaScript(
+      "new Promise((done) => { const wait = () => document.documentElement.dataset.printReady ? document.fonts.ready.then(() => done(true)) : setTimeout(wait, 50); wait(); })",
+    );
+    return await win.webContents.printToPDF({ printBackground: true, preferCSSPageSize: true });
+  } finally {
+    win.destroy();
+  }
+}
+
+/** arco://app/export.pdf?page=/activity/report…&name=…: the statement, as a PDF download. */
+async function exportPdf(url) {
+  const page = url.searchParams.get("page") ?? "";
+  if (!page.startsWith("/activity/report")) return new Response("Not found", { status: 404 });
+  const name = (url.searchParams.get("name") ?? "Cathedral Statement").replace(/[^\w .-]/g, "");
+  const pdf = await printPage(page);
+  return new Response(pdf, {
+    headers: { "content-type": "application/pdf", "content-disposition": `attachment; filename="${name}.pdf"` },
+  });
+}
+
 /** Rewrite one URL between the window's address and SvelteKit's. */
 const swap = (url, from, to) => (url.startsWith(from) ? to + url.slice(from.length) : url);
 
@@ -72,6 +106,8 @@ async function start() {
   protocol.handle("arco", async (request) => {
     const url = new URL(request.url);
     if (url.host !== "app") return new Response("Not found", { status: 404 });
+
+    if (url.pathname === "/export.pdf") return exportPdf(url);
 
     const file = staticFile(url.pathname);
     if (file) return file;
@@ -141,6 +177,14 @@ function openWindow() {
 
 app.whenReady().then(async () => {
   await start();
+  // A check from the terminal: ARCO_SUR_PDF_CHECK=out.pdf prints the
+  // statement to that file and quits, without opening the window.
+  if (process.env.ARCO_SUR_PDF_CHECK) {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(process.env.ARCO_SUR_PDF_CHECK, await printPage("/activity/report"));
+    app.quit();
+    return;
+  }
   openWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) openWindow();

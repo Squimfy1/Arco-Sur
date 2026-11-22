@@ -92,6 +92,12 @@ export async function balanceAt(address: string, block: bigint | "latest"): Prom
   return toInt(await ask("eth_getBalance", [address, tag]));
 }
 
+/** When a block was made, in seconds since 1970; null if the node has no such block. */
+export async function blockTime(block: bigint): Promise<bigint | null> {
+  const b = (await ask("eth_getBlockByNumber", ["0x" + block.toString(16), false])) as { timestamp?: string } | null;
+  return b ? toInt(b.timestamp) : null;
+}
+
 /**
  * Transactions already sent from this address.
  *

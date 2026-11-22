@@ -1,17 +1,51 @@
 <script lang="ts">
   // Send: fill in a payment, then Review it. Review runs the wallet's guard
-  // and a rehearsal on the node, on the server, and shows what they said.
-  // Nothing is signed from here yet: that is Stage 10.
+  // and a rehearsal on the node, on the server, and shows what they said
+  // with a quote. Send then signs and broadcasts it on the server, and the
+  // progress window follows each step until the chain confirms it.
   import { enhance, type SubmitFunction } from "$app/forms";
-  import AssetBadge from "#lib/ui/AssetBadge.svelte";
+  import { invalidateAll } from "$app/navigation";
+  import ProgressWindow from "#lib/ui/ProgressWindow.svelte";
+  import { follow } from "#lib/ui/progress.ts";
+  import type { Progress } from "#lib/contract.ts";
+  import AssetPicker from "#lib/ui/AssetPicker.svelte";
+  import BalanceList from "#lib/ui/BalanceList.svelte";
+  import AmountInput from "#lib/ui/AmountInput.svelte";
   import Icon from "#lib/ui/Icon.svelte";
   import Pill from "#lib/ui/Pill.svelte";
+  import RecipientField from "#lib/ui/RecipientField.svelte";
 
   import type { PageProps } from "./$types";
 
   let { data, form }: PageProps = $props();
   let reviewing = $state(false);
   const review = $derived(form?.review);
+
+  // What is being typed. Each follows the last review, and the fields below.
+  let asset = $derived(review?.form.asset ?? "USDC");
+  let to = $derived(review?.form.to ?? "");
+  let amount = $derived(review?.form.amount ?? "");
+  const chosen = $derived(data.mandate.limits.find((l) => l.asset === asset) ?? data.mandate.limits[0]);
+  // Why a refused review stopped: the step that failed, in the backend's words.
+  const stopped = $derived(review?.tone === "ok" ? undefined : review?.steps.find((s) => s.tone !== "ok"));
+
+  // The payment going through, step by step, while the window is open.
+  let progress: Progress[] | null = $state(null);
+  let sent = $state(false);
+
+  async function sendIt() {
+    if (!review) return;
+    progress = [];
+    sent = false;
+    await follow("/api/send", review.form, (p) => (progress = [...(progress ?? []), p]));
+    sent = true;
+    // Read the wallet again, so the balance and its history show the result.
+    await invalidateAll();
+  }
+
+  function closeWindow() {
+    progress = null;
+  }
 
   // Keep what was typed after a review, and show "Checking…" meanwhile.
   const submit: SubmitFunction = () => {
@@ -24,7 +58,7 @@
 </script>
 
 <svelte:head>
-  <title>Arco-Sur · Send</title>
+  <title>Send</title>
 </svelte:head>
 
 <h1>Send</h1>
@@ -35,30 +69,29 @@
     class="card form"
     method="POST"
     action="?/review"
+    novalidate
     use:enhance={submit}
   >
     <div class="field">
-      <label for="asset">Asset</label>
-      <select id="asset" name="asset" value={review?.form.asset ?? "USDC"}>
-        {#each data.mandate.limits as l (l.asset)}
-          <option value={l.asset}>{l.asset}</option>
-        {/each}
-      </select>
+      <label for="amount">Amount</label>
+      <AmountInput id="amount" name="amount" bind:value={amount} max={chosen?.max ?? ""} placeholder="0.10" />
+    </div>
+
+    <div class="field">
+      <label id="asset-label" for="asset">Asset</label>
+      <AssetPicker
+        id="asset"
+        name="asset"
+        label="asset-label"
+        options={data.mandate.limits}
+        value={asset}
+        onpick={(a) => (asset = a)}
+      />
     </div>
 
     <div class="field">
       <label for="to">Recipient</label>
-      <input id="to" name="to" class="num" list="allowed" placeholder="0x…" autocomplete="off" spellcheck="false" required value={review?.form.to ?? ""} />
-      <datalist id="allowed">
-        {#each data.mandate.recipients as r (r.address)}
-          <option value={r.address}>{r.label}</option>
-        {/each}
-      </datalist>
-    </div>
-
-    <div class="field">
-      <label for="amount">Amount</label>
-      <input id="amount" name="amount" class="num" inputmode="decimal" placeholder="0.1" autocomplete="off" required value={review?.form.amount ?? ""} />
+      <RecipientField id="to" name="to" bind:value={to} options={data.mandate.recipients} />
     </div>
 
     <button class="btn" type="submit" disabled={reviewing}>
@@ -67,22 +100,7 @@
     </button>
   </form>
 
-  <aside class="card limits">
-    <h2 class="card-title">What you may send</h2>
-    {#each data.mandate.limits as l (l.asset)}
-      <div class="limit">
-        <AssetBadge asset={l.asset} badge={l.badge} size="1.75rem" />
-        <span>
-          <span class="num money">{l.left} {l.asset}</span> left of <span class="num money">{l.total}</span>
-          <span class="muted block">at most <span class="num money">{l.perPayment}</span> per payment</span>
-        </span>
-      </div>
-    {/each}
-    <p class="muted small">Only to:</p>
-    {#each data.mandate.recipients as r (r.address)}
-      <p class="small num">{r.address}{#if r.label}<span class="muted tag">· {r.label}</span>{/if}</p>
-    {/each}
-  </aside>
+  <BalanceList holdings={data.holdings} current={asset} />
 </div>
 
 {#if review}
@@ -91,33 +109,32 @@
       <h2 class="card-title">{review.title}</h2>
       <Pill tone={review.tone} label={review.tone === "ok" ? "Passed" : "Stopped"} />
     </div>
-    <ol class="steps">
-      {#each review.steps as s (s.label)}
-        <li data-tone={s.tone}>
-          <span class="step-label">{s.label}</span>
-          <span class="step-text">{s.text}</span>
-        </li>
-      {/each}
-    </ol>
-    {#if review.tone === "ok"}
+    {#if stopped}
+      <p class="why" data-tone={stopped.tone}><span class="why-label">{stopped.label}:</span> {stopped.text}</p>
+    {/if}
+    {#if review.tone === "ok" && review.quote}
+      <dl class="quote">
+        <div><dt>Amount</dt><dd class="num money">{review.quote.amount}</dd></div>
+        <div><dt>To</dt><dd>{review.quote.to}</dd></div>
+        <div><dt>Network Fee</dt><dd class="num money">{review.quote.fee}</dd></div>
+        <div><dt>Total</dt><dd class="num money">{review.quote.total}</dd></div>
+        <div><dt>Balance After</dt><dd class="num money">{review.quote.after}</dd></div>
+      </dl>
       <div class="sign">
-        <button class="btn" disabled><Icon name="lock" size="1.1rem" /> Sign and send</button>
-        <p class="muted small">
-          Signing from the app arrives in Stage 10. Until then, send this exact payment with
-          <code>npm run send</code>, which runs the same checks and then signs.
-        </p>
+        <button class="btn" type="button" onclick={sendIt} disabled={progress !== null}>
+          <Icon name="send" size="1.1rem" /> {sent ? "Send Again" : "Send"}
+        </button>
+        <p class="muted small">Signed on this computer with the testnet key, then broadcast to Arc.</p>
       </div>
     {/if}
   </section>
 {/if}
 
-<style>
-  h1 {
-    margin: 0;
-    font-size: var(--step-3);
-    font-weight: 600;
-  }
+{#if progress}
+  <ProgressWindow events={progress} onclose={closeWindow} />
+{/if}
 
+<style>
   .lede {
     margin: var(--space-1) 0 var(--space-5);
   }
@@ -138,18 +155,6 @@
     justify-self: start;
   }
 
-  .limit {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--rule);
-  }
-
-  .block {
-    display: block;
-    font-size: var(--step--1);
-  }
 
   .small {
     font-size: var(--step--1);
@@ -167,40 +172,55 @@
     justify-content: space-between;
   }
 
-  .steps {
-    list-style: none;
+  .why {
     margin: 0;
-    padding: 0;
-    display: grid;
-    gap: var(--space-2);
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
   }
 
-  .steps li {
-    display: grid;
-    grid-template-columns: 6rem minmax(0, 1fr);
-    gap: var(--space-3);
-    padding: var(--space-3);
-    border-radius: var(--radius);
-    background: var(--panel-2);
-    border-left: 3px solid var(--tone);
-  }
-
-  .step-label {
+  .why-label {
     font-weight: 600;
     color: var(--tone);
   }
 
-  .step-text {
-    overflow-wrap: anywhere;
+  .quote {
+    display: grid;
+    margin: 0;
+    border-radius: var(--radius);
+    background: var(--panel-2);
+  }
+
+  .quote div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .quote div + div {
+    border-top: 1px solid var(--rule);
+  }
+
+  .quote dt {
+    color: var(--ink-3);
+  }
+
+  .quote dd {
+    margin: 0;
+    font-weight: 500;
+    text-align: right;
   }
 
   .sign {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-3);
     margin-top: var(--space-4);
   }
 
-  code {
-    font-family: var(--mono);
-    color: var(--ink);
+  .sign p {
+    margin: 0;
   }
 
   @media (max-width: 48rem) {

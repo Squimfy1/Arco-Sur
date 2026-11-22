@@ -15,25 +15,25 @@
 </script>
 
 <svelte:head>
-  <title>Arco-Sur · Receive</title>
+  <title>Receive</title>
 </svelte:head>
 
 <h1>Receive</h1>
 <p class="muted lede">Give this address to whoever is paying you. It takes USDC and EURC on {data.network}.</p>
 
 <section class="card receive">
-  <p class="label">Your address</p>
+  <p class="label">Your Address</p>
   <p class="address num">{data.wallet.address}</p>
   <div class="buttons">
     <button class="btn" onclick={copy}>
       <Icon name={copied ? "check" : "copy"} size="1.1rem" />
-      {copied ? "Copied" : "Copy address"}
+      {copied ? "Copied" : "Copy Address"}
     </button>
     <a class="btn ghost" href={data.wallet.url} target="_blank" rel="noreferrer">
-      <Icon name="external" size="1.1rem" /> View in explorer
+      <Icon name="external" size="1.1rem" /> View in Explorer
     </a>
     <a class="btn ghost" href={data.links.faucet} target="_blank" rel="noreferrer">
-      <Icon name="faucet" size="1.1rem" /> Get test funds
+      <Icon name="faucet" size="1.1rem" /> Get Test Funds
     </a>
   </div>
   <p class="warn" data-tone="warn">
@@ -42,12 +42,6 @@
 </section>
 
 <style>
-  h1 {
-    margin: 0;
-    font-size: var(--step-3);
-    font-weight: 600;
-  }
-
   .lede {
     margin: var(--space-1) 0 var(--space-5);
   }

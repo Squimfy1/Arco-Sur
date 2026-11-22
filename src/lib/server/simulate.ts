@@ -41,7 +41,16 @@ async function rehearse<T>(step: () => Promise<T>): Promise<{ value: T } | { rea
   }
 }
 
-export async function simulate(from: string, tx: TxShape, node: Simulator = arc): Promise<Simulation> {
+/**
+ * `returnsBool`: the call is a token transfer or approval, which answers
+ * true or false. Other contract calls (a swap) may return nothing.
+ */
+export async function simulate(
+  from: string,
+  tx: TxShape,
+  node: Simulator = arc,
+  { returnsBool = tx.data !== "0x" }: { returnsBool?: boolean } = {},
+): Promise<Simulation> {
   const call = await rehearse(() => node.simulateCall(from, tx));
   if ("reason" in call) {
     return { ok: false, reason: call.reason };
@@ -54,10 +63,10 @@ export async function simulate(from: string, tx: TxShape, node: Simulator = arc)
   // A token transfer or approval returns a bool. A standard token reverts on
   // failure, but some return false instead, which is just as much a failure.
   // One that returns nothing at all cannot be confirmed, so it is refused.
-  if (call.value === "0x") {
+  if (returnsBool && call.value === "0x") {
     return { ok: false, reason: "the token call returned nothing; cannot confirm it would succeed" };
   }
-  if (BigInt(call.value) !== 1n) {
+  if (returnsBool && BigInt(call.value) !== 1n) {
     return { ok: false, reason: "the token call returned false" };
   }
 

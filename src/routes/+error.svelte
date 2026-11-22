@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-  <title>Arco-Sur · not read</title>
+  <title>Wallet Not Read</title>
 </svelte:head>
 
 <main>
@@ -37,7 +37,6 @@
   }
 
   .msg {
-    font-family: var(--mono);
     font-size: var(--step--1);
     padding: var(--space-3) 0;
     border-top: 1px solid var(--rule);

@@ -36,6 +36,16 @@ export const EURC = {
   note: "Circle's euro stablecoin; the faucet gives it",
 } as const satisfies KnownContract;
 
+// Address from the Arc docs and Circle's cirBTC page (both 2026-11-21),
+// checked on chain: symbol cirBTC, 8 decimals, like Bitcoin itself.
+export const CIRBTC = {
+  name: "cirBTC",
+  address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+  abi: erc20Abi,
+  kind: "token",
+  note: "Circle Wrapped Bitcoin; 8 decimals; the faucet gives it",
+} as const satisfies KnownContract;
+
 // Signed, expiring spending approvals that DEXes use. Needed in Stage 5.
 export const PERMIT2 = {
   name: "Permit2",
@@ -67,5 +77,62 @@ export const MULTICALL3 = {
   note: "many reads in one request",
 } as const satisfies KnownContract;
 
-export const CONTRACTS: readonly KnownContract[] = [USDC, EURC, PERMIT2, MULTICALL3];
+// Circle's swap contract (App Kit Swap's "Adapter"). A swap is one call to
+// execute(): it takes the input token, runs the signed route Circle's
+// Stablecoin Service quoted, and pays the output to the beneficiaries named
+// in the call. The wallet's rules let it take exactly one swap's amount.
+// Address from the SDK (@circle-fin/adapter-viem-v2, ADAPTER_CONTRACT_EVM_TESTNET),
+// checked on chain on 2026-11-21 to hold contract code.
+export const SWAP_ADAPTER = {
+  name: "Circle Swap Adapter",
+  address: "0xBBD70b01a1CAbc96d5b7b129Ae1AAabdf50dd40b",
+  abi: [
+    {
+      type: "function",
+      name: "execute",
+      stateMutability: "payable",
+      outputs: [],
+      inputs: [
+        {
+          name: "params",
+          type: "tuple",
+          components: [
+            {
+              name: "instructions",
+              type: "tuple[]",
+              components: [
+                { name: "target", type: "address" },
+                { name: "data", type: "bytes" },
+                { name: "value", type: "uint256" },
+                { name: "tokenIn", type: "address" },
+                { name: "amountToApprove", type: "uint256" },
+                { name: "tokenOut", type: "address" },
+                { name: "minTokenOut", type: "uint256" },
+              ],
+            },
+            { name: "tokens", type: "tuple[]", components: [{ name: "token", type: "address" }, { name: "beneficiary", type: "address" }] },
+            { name: "execId", type: "uint256" },
+            { name: "deadline", type: "uint256" },
+            { name: "metadata", type: "bytes" },
+          ],
+        },
+        {
+          name: "tokenInputs",
+          type: "tuple[]",
+          components: [
+            { name: "permitType", type: "uint8" },
+            { name: "token", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "permitCalldata", type: "bytes" },
+          ],
+        },
+        { name: "signature", type: "bytes" },
+      ],
+    },
+  ],
+  kind: "infrastructure",
+  note: "Circle's swap contract; the one spender the rules allow",
+} as const satisfies KnownContract;
+
+export const CONTRACTS: readonly KnownContract[] = [USDC, EURC, CIRBTC, PERMIT2, MULTICALL3, SWAP_ADAPTER];
 export const TOKENS: readonly KnownContract[] = CONTRACTS.filter((c) => c.kind === "token");

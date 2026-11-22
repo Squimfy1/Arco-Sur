@@ -1,38 +1,39 @@
 <script lang="ts">
   // One operation: what it was, to whom, how much, and what the chain said.
+  // Click it to open its receipt underneath.
   import type { ActivityRow } from "../contract.ts";
   import Icon from "./Icon.svelte";
   import Pill from "./Pill.svelte";
+  import Receipt from "./Receipt.svelte";
 
   let { op }: { op: ActivityRow } = $props();
 </script>
 
-<li class="op">
-  <span class="dir" data-dir={op.icon}><Icon name={op.icon} size="1.1rem" /></span>
-  <span class="what">
-    <span class="kind">{op.kind}</span>
-    <span class="sub">
-      <span class="num">{op.time}</span>
-      {#if op.toLabel}
-        · to {op.toLabel}
-      {:else}
-        · to <span class="num" title={op.to}>{op.toShort}</span>
-      {/if}
-      {#if op.nonce !== "—"}· nonce <span class="num">{op.nonce}</span>{/if}
-    </span>
-    {#if op.detail}<span class="detail">{op.detail}</span>{/if}
-    {#each op.problems as p (p)}<span class="problem">{p}</span>{/each}
-  </span>
-  <span class="status"><Pill tone={op.tone} label={op.status} /></span>
-  <span class="amount">
-    <span class="num money">{op.amount} {op.asset}</span>
-    <span class="fee">fee <span class="num money">{op.fee}</span></span>
-  </span>
-  <span class="link">
-    {#if op.txUrl}
-      <a href={op.txUrl} target="_blank" rel="noreferrer" aria-label="Open line {op.line} in the explorer"><Icon name="external" size="1rem" /></a>
-    {/if}
-  </span>
+<li>
+  <details>
+    <summary class="op">
+      <span class="dir" data-dir={op.icon}><Icon name={op.icon} size="1.1rem" /></span>
+      <span class="what">
+        <span class="kind">{op.kind}</span>
+        <span class="sub">
+          <span class="num">{op.time}</span>{#if op.toLabel}, to {op.toLabel}{:else}, to <span class="num" title={op.to}>{op.toShort}</span>{/if}{#if op.nonce !== "—"}, nonce <span class="num">{op.nonce}</span>{/if}
+        </span>
+        {#if op.detail}<span class="detail">{op.detail}</span>{/if}
+        {#each op.problems as p (p)}<span class="problem">{p}</span>{/each}
+      </span>
+      <span class="status"><Pill tone={op.tone} label={op.status} /></span>
+      <span class="amount">
+        <span class="num money">{op.amount} {op.asset}</span>
+        <span class="fee">fee <span class="num money">{op.fee}</span></span>
+      </span>
+      <span class="link">
+        {#if op.txUrl}
+          <a href={op.txUrl} target="_blank" rel="noreferrer" aria-label="Open line {op.line} in the explorer"><Icon name="external" size="1rem" /></a>
+        {/if}
+      </span>
+    </summary>
+    <Receipt {op} />
+  </details>
 </li>
 
 <style>
@@ -45,7 +46,17 @@
     border-radius: var(--radius);
   }
 
-  .op:hover {
+  .op {
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .op::-webkit-details-marker {
+    display: none;
+  }
+
+  .op:hover,
+  details[open] > .op {
     background: var(--panel-2);
   }
 
